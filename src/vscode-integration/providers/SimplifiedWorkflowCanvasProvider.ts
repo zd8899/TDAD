@@ -418,6 +418,10 @@ export class SimplifiedWorkflowCanvasProvider {
                             await vscode.commands.executeCommand('tdad.showSettings');
                             break;
 
+                        case 'openFeedback':
+                            vscode.env.openExternal(vscode.Uri.parse('https://github.com/zd8899/TDAD/issues'));
+                            break;
+
                         case 'openPromptTemplate':
                             logCanvas(`Received openPromptTemplate message: ${JSON.stringify(message)}`);
                             await this._promptHandlers.handleOpenPromptTemplate(message.templateName);

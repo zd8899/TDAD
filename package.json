@@ -19,7 +19,8 @@
   },
   "categories": [
     "Programming Languages",
-    "Other"
+    "Testing",
+    "Visualization"
   ],
   "keywords": [
     "ai",
@@ -33,7 +34,10 @@
     "testing",
     "automation",
     "canvas",
-    "visual-programming"
+    "visual-programming",
+    "agent",
+    "ai-agent",
+    "dev-tool"
   ],
   "galleryBanner": {
     "color": "#1e1e1e",

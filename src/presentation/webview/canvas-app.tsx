@@ -837,6 +837,7 @@ const CanvasApp: React.FC = () => {
               onRunAllNodes={handleRunAllNodes}
               onStopAllNodes={handleStopAllNodes}
               autopilotBetaCode={settingsData?.autopilotSettings?.betaCode}
+              onOpenFeedback={() => postMessage({ command: 'openFeedback' })}
 
               // Context Actions (BottomActionBar)
               bddSpecFilePath={nodeActionsState.bddSpecFilePath}

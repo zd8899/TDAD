@@ -175,6 +175,28 @@ export const WelcomeOverlay: React.FC<WelcomeOverlayProps> = ({ onStartNew, onIm
                         <span>📂</span> Map Codebase
                     </button>
                 </div>
+
+                <div style={{ marginTop: '24px' }}>
+                    <a
+                        href="https://github.com/zd8899/TDAD"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                            fontSize: '12px',
+                            color: 'var(--vscode-textLink-foreground)',
+                            textDecoration: 'none',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            opacity: 0.8,
+                            transition: 'opacity 0.2s'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                        onMouseLeave={(e) => e.currentTarget.style.opacity = '0.8'}
+                    >
+                        <span>⭐</span> Star on GitHub to support us!
+                    </a>
+                </div>
             </div>
         </div>
     );

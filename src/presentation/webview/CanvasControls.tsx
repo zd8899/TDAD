@@ -28,6 +28,7 @@ interface CanvasControlsProps {
   onStopAllNodes?: () => void;
   // Autopilot settings
   autopilotBetaCode?: string;
+  onOpenFeedback?: () => void;
 }
 
 const CanvasControls: React.FC<CanvasControlsProps> = ({
@@ -45,7 +46,8 @@ const CanvasControls: React.FC<CanvasControlsProps> = ({
   allNodesProgress,
   onRunAllNodes,
   onStopAllNodes,
-  autopilotBetaCode
+  autopilotBetaCode,
+  onOpenFeedback
 }) => {
   // Check if autopilot is unlocked via beta code
   const hasValidBetaCode = autopilotBetaCode && isValidBetaCode(autopilotBetaCode);
@@ -143,6 +145,16 @@ const CanvasControls: React.FC<CanvasControlsProps> = ({
           title="Refresh Canvas"
         >
           <span className="canvas-controls__icon">↻</span>
+        </button>
+
+        <div className="canvas-controls__separator" />
+
+        <button
+          onClick={onOpenFeedback}
+          className="canvas-controls__btn canvas-controls__btn--icon-only"
+          title="Send Feedback / Report Bug"
+        >
+          <span className="canvas-controls__icon">💬</span>
         </button>
       </div>
     </div>

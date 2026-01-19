@@ -21,24 +21,7 @@ export function activate(context: vscode.ExtensionContext) {
         if (workspaceFolder) {
             const bootstrap = new TDADBootstrap(workspaceFolder, context.extensionPath);
             bootstrap.isInitialized().then(async (initialized) => {
-                if (!initialized) {
-                    logExtension('TDAD not initialized in workspace, prompting user...');
-                    const choice = await vscode.window.showInformationMessage(
-                        'Initialize TDAD (Test-Driven AI Development) in this workspace?',
-                        'Yes',
-                        'Not Now',
-                        'Learn More'
-                    );
-
-                    if (choice === 'Yes') {
-                        await bootstrap.initializeWithProgress();
-                        // Auto-open canvas after initialization
-                        logExtension('Auto-opening TDAD Canvas after initialization...');
-                        SimplifiedWorkflowCanvasProvider.createOrShow(context.extensionUri, context);
-                    } else if (choice === 'Learn More') {
-                        vscode.env.openExternal(vscode.Uri.parse('https://github.com/anthropics/tdad'));
-                    }
-                } else {
+                if (initialized) {
                     logExtension('TDAD structure already initialized');
                     // Auto-open canvas for TDAD workspaces
                     logExtension('Auto-opening TDAD Canvas...');

@@ -32,6 +32,7 @@ interface UnifiedBottomBarProps {
     onStopAllNodes?: () => void;
     // Autopilot settings
     autopilotBetaCode?: string;
+    onOpenFeedback?: () => void;
 
     // BottomActionBar Props (Context Actions)
     bddSpecFilePath: string | null;
@@ -123,6 +124,7 @@ export const UnifiedBottomBar: React.FC<UnifiedBottomBarProps> = (props) => {
                 onRunAllNodes={props.onRunAllNodes}
                 onStopAllNodes={props.onStopAllNodes}
                 autopilotBetaCode={props.autopilotBetaCode}
+                onOpenFeedback={props.onOpenFeedback}
             />
         </div>
     );

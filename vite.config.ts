@@ -12,7 +12,7 @@ export default defineConfig({
   build: {
     // Output to the media directory (where VS Code expects webview files)
     outDir: '../../../media',
-    emptyOutDir: true,
+    emptyOutDir: false, // Preserve existing files (GIFs, images, etc.)
     
     // Generate a single JS file for easier VS Code webview loading
     rollupOptions: {
