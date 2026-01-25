@@ -1,54 +1,4 @@
 /**
- * FixturesGenerator - Generates TDAD fixtures file for Playwright tests
- *
- * Extracted from ScaffoldingService to comply with CLAUDE.md file size limits
- * Contains the large template for tdad-fixtures.js generation
- */
-
-import * as path from 'path';
-import * as fs from 'fs';
-import { Logger } from '../../shared/utils/Logger';
-
-export class FixturesGenerator {
-    /**
-     * Detect if the target project uses ES Modules
-     */
-    isESMProject(workspaceRoot: string): boolean {
-        try {
-            const packageJsonPath = path.join(workspaceRoot, 'package.json');
-            if (fs.existsSync(packageJsonPath)) {
-                const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
-                return packageJson.type === 'module';
-            }
-        } catch {
-            // Default to CommonJS
-        }
-        return false;
-    }
-
-    /**
-     * Generate TDAD fixtures file with centralized trace capture
-     * @param isESM - Whether to use ES Module syntax
-     */
-    scaffoldFixturesFile(isESM = false): string {
-        const imports = isESM
-            ? `import { test as base, expect } from '@playwright/test';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-// ESM equivalent of __dirname
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);`
-            : `const { test: base, expect } = require('@playwright/test');
-const fs = require('fs');
-const path = require('path');`;
-
-        const usageComment = isESM
-            ? `import { test, expect } from './tdad-fixtures.js';`
-            : `const { test, expect } = require('./tdad-fixtures');`;
-
-        return `/**
  * AUTO-GENERATED FILE - DO NOT EDIT
  * This file is automatically regenerated before each test run.
  * Any manual changes will be overwritten.
@@ -71,9 +21,11 @@ const path = require('path');`;
  * CoverageParser merges them after test run completes.
  *
  * Usage in test files:
- *   ${usageComment}
+ *   const { test, expect } = require('./tdad-fixtures');
  */
-${imports}
+const { test: base, expect } = require('@playwright/test');
+const fs = require('fs');
+const path = require('path');
 
 // Workspace root - derive from fixtures file location (.tdad/tdad-fixtures.js)
 const workspaceRoot = path.dirname(__dirname);
@@ -81,7 +33,7 @@ const workspaceRoot = path.dirname(__dirname);
 // Coverage file management - PER-WORKER files to avoid race conditions
 const coverageDir = path.join(workspaceRoot, '.tdad', 'coverage');
 const workerIndex = process.env.TEST_WORKER_INDEX || process.pid.toString();
-const coveragePath = path.join(coverageDir, \`coverage-worker-\${workerIndex}.json\`);
+const coveragePath = path.join(coverageDir, `coverage-worker-${workerIndex}.json`);
 
 /**
  * Write trace data incrementally - each worker writes to its own file
@@ -269,7 +221,7 @@ const test = base.extend({
             const logEntry = {
                 type: msg.type(),
                 text: msg.text(),
-                location: msg.location() ? \`\${msg.location().url}:\${msg.location().lineNumber}\` : null,
+                location: msg.location() ? `${msg.location().url}:${msg.location().lineNumber}` : null,
                 timestamp: Date.now()
             };
             writeTraceIncremental(testTitle, { consoleLog: logEntry });
@@ -291,7 +243,7 @@ const test = base.extend({
                 const html = await page.content();
                 if (html) {
                     const truncatedHtml = html.length > 5000
-                        ? html.substring(0, 5000) + '\\n... [truncated]'
+                        ? html.substring(0, 5000) + '\n... [truncated]'
                         : html;
                     return {
                         type: 'html',
@@ -306,14 +258,14 @@ const test = base.extend({
         async function captureScreenshot(testTitle, testFile) {
             try {
                 let workflowPath = '';
-                const workflowsMatch = testFile.match(/\\.tdad[\\\\/]workflows[\\\\/](.+)[\\\\/][^\\\\/]+\\.test\\.js$/);
+                const workflowsMatch = testFile.match(/\.tdad[\\/]workflows[\\/](.+)[\\/][^\\/]+\.test\.js$/);
                 if (workflowsMatch) {
-                    workflowPath = workflowsMatch[1].replace(/\\\\/g, '/');
+                    workflowPath = workflowsMatch[1].replace(/\\/g, '/');
                 }
 
                 const safeTestTitle = testTitle
                     .toLowerCase()
-                    .replace(/[\\s/\\\\]+/g, '-')
+                    .replace(/[\s/\\]+/g, '-')
                     .replace(/[^a-z0-9-]/g, '')
                     .replace(/-+/g, '-')
                     .replace(/^-|-$/g, '')
@@ -326,11 +278,11 @@ const test = base.extend({
                     fs.mkdirSync(screenshotDir, { recursive: true });
                 }
 
-                const fileName = \`\${safeTestTitle}.png\`;
+                const fileName = `${safeTestTitle}.png`;
                 const filePath = path.join(screenshotDir, fileName);
                 const relativePath = workflowPath
-                    ? \`.tdad/debug/\${workflowPath}/screenshots/\${fileName}\`
-                    : \`.tdad/debug/screenshots/\${fileName}\`;
+                    ? `.tdad/debug/${workflowPath}/screenshots/${fileName}`
+                    : `.tdad/debug/screenshots/${fileName}`;
 
                 await page.screenshot({ path: filePath, fullPage: true });
 
@@ -338,69 +290,6 @@ const test = base.extend({
             } catch (e) {
                 return null;
             }
-        }
-
-        /**
-         * Save trace JSON file directly during test teardown
-         * Ensures trace files are generated regardless of how tests are run (CLI or UI)
-         */
-        function saveTraceFile(testTitle, testFile, trace, testStatus, testDuration, testError) {
-            try {
-                let workflowPath = '';
-                const workflowsMatch = testFile.match(/\\.tdad[\\\\/]workflows[\\\\/](.+)[\\\\/][^\\\\/]+\\.test\\.js$/);
-                if (workflowsMatch) {
-                    workflowPath = workflowsMatch[1].replace(/\\\\/g, '/');
-                }
-                if (!workflowPath) return;
-
-                const safeTestTitle = testTitle
-                    .toLowerCase()
-                    .replace(/[\\s/\\\\]+/g, '-')
-                    .replace(/[^a-z0-9-]/g, '')
-                    .replace(/-+/g, '-')
-                    .replace(/^-|-$/g, '')
-                    .substring(0, 50);
-
-                const traceDir = path.join(workspaceRoot, '.tdad', 'debug', workflowPath, 'trace-files');
-                if (!fs.existsSync(traceDir)) {
-                    fs.mkdirSync(traceDir, { recursive: true });
-                }
-
-                const fileName = \`trace-\${safeTestTitle}.json\`;
-                const filePath = path.join(traceDir, fileName);
-
-                const traceData = {
-                    testTitle: testTitle,
-                    timestamp: new Date().toISOString(),
-                    status: testStatus || trace.status || 'unknown',
-                    duration: testDuration ?? trace.duration ?? null,
-                    errorMessage: testError ? (testError.message || String(testError)) : null,
-                    callStack: [],
-                    apiRequests: trace.apiRequests || [],
-                    consoleLogs: trace.consoleLogs || [],
-                    pageErrors: trace.pageErrors || [],
-                    actionResult: trace.actionResult || null,
-                    domSnapshot: trace.domSnapshot || null,
-                    screenshotPath: trace.screenshotPath || null
-                };
-
-                if (testError && testError.stack) {
-                    const lines = testError.stack.split('\\n');
-                    for (const line of lines) {
-                        const match = line.match(/at\\s+(?:(.+?)\\s+\\()?(.+?):(\\d+):(\\d+)\\)?/);
-                        if (match) {
-                            traceData.callStack.push({
-                                func: match[1] || undefined,
-                                file: match[2],
-                                line: parseInt(match[3], 10),
-                                column: parseInt(match[4], 10)
-                            });
-                        }
-                    }
-                }
-
-                fs.writeFileSync(filePath, JSON.stringify(traceData, null, 2), 'utf-8');
-            } catch (e) { /* Silently fail - trace file is non-critical */ }
         }
 
         page.on('pageerror', async (error) => {
@@ -428,7 +317,7 @@ const test = base.extend({
             } catch (e) { /* Ignore */ }
         }
 
-        const isApiTest = /\\[API(-\\d+)?\\]/.test(testTitle);
+        const isApiTest = /\[API(-\d+)?\]/.test(testTitle);
         const screenshotPath = isApiTest ? null : await captureScreenshot(testTitle, testInfo.file);
 
         let domSnapshot = null;
@@ -447,130 +336,7 @@ const test = base.extend({
             domSnapshot: domSnapshot,
             screenshotPath: screenshotPath
         });
-
-        // Save trace JSON file directly (works for both CLI and UI test runs)
-        const finalTrace = {
-            status: testInfo.status,
-            duration: testInfo.duration,
-            apiRequests: [],
-            consoleLogs: [],
-            pageErrors: [],
-            actionResult: null,
-            domSnapshot: domSnapshot,
-            screenshotPath: screenshotPath
-        };
-        // Read back the accumulated trace data from coverage file
-        try {
-            if (fs.existsSync(coveragePath)) {
-                const coverageData = JSON.parse(fs.readFileSync(coveragePath, 'utf-8'));
-                const testTrace = coverageData.testTraces?.[testTitle];
-                if (testTrace) {
-                    finalTrace.apiRequests = testTrace.apiRequests || [];
-                    finalTrace.consoleLogs = testTrace.consoleLogs || [];
-                    finalTrace.pageErrors = testTrace.pageErrors || [];
-                    finalTrace.actionResult = testTrace.actionResult;
-                }
-            }
-        } catch (e) { /* Use empty trace if read fails */ }
-        saveTraceFile(testTitle, testInfo.file, finalTrace, testInfo.status, testInfo.duration, testInfo.error);
     }, { auto: true }]
 });
 
-${isESM ? 'export { test, expect };' : 'module.exports = { test, expect };'}
-`;
-    }
-
-    /**
-     * Ensure TDAD fixtures file is up-to-date in the project
-     */
-    ensureFixturesFile(workspaceRoot: string, isESM?: boolean): string | null {
-        const fixturesPath = path.join(workspaceRoot, '.tdad', 'tdad-fixtures.js');
-        const fixturesDir = path.dirname(fixturesPath);
-
-        const useESM = isESM !== undefined ? isESM : this.isESMProject(workspaceRoot);
-
-        if (!fs.existsSync(fixturesDir)) {
-            fs.mkdirSync(fixturesDir, { recursive: true });
-        }
-
-        fs.writeFileSync(fixturesPath, this.scaffoldFixturesFile(useESM), 'utf-8');
-        return fixturesPath;
-    }
-
-    /**
-     * Generate TDAD-specific playwright.config.js
-     */
-    scaffoldPlaywrightConfig(workspaceRoot: string, urls: Record<string, string>, workers = 1): string {
-        const tdadDir = path.join(workspaceRoot, '.tdad');
-        if (!fs.existsSync(tdadDir)) {
-            fs.mkdirSync(tdadDir, { recursive: true });
-        }
-        const configPath = path.join(tdadDir, 'playwright.config.js');
-
-        const isESM = this.isESMProject(workspaceRoot);
-
-        const normalizeKey = (key: string): string => {
-            if (key === 'frontend' || key === 'fe') {return 'ui';}
-            if (key === 'backend' || key === 'be') {return 'api';}
-            return key;
-        };
-
-        const urlEntries = Object.entries(urls);
-        const projects = urlEntries.length > 0
-            ? urlEntries.map(([name, url]) => {
-                const normalizedName = normalizeKey(name);
-                return {
-                    name: normalizedName,
-                    url,
-                    // UI project should match both UI and API tests (browser tests)
-                    // API project matches only backend API tests
-                    grep: normalizedName === 'ui' ? '/\\[(UI|API)-\\d+\\]/' :
-                          normalizedName === 'api' ? '/\\[API-\\d+\\]/' :
-                          null
-                };
-            })
-            : [{ name: 'default', url: 'http://localhost:5173', grep: null }];
-
-        const projectsConfig = projects.map(p => {
-            const grepComment = p.name === 'ui' ? 'Match [UI-xxx] and [API-xxx] tests' :
-                               p.name === 'api' ? 'Match [API-xxx] tests' : '';
-            const grepLine = p.grep ? `\n      grep: ${p.grep},  // ${grepComment}` : '';
-            return `    {
-      name: '${p.name}',
-      use: { baseURL: '${p.url}' },${grepLine}
-    }`;
-        }).join(',\n');
-
-        const importStatement = isESM
-            ? `import { defineConfig } from '@playwright/test';`
-            : `const { defineConfig } = require('@playwright/test');`;
-        const exportStatement = isESM
-            ? `export default defineConfig({`
-            : `module.exports = defineConfig({`;
-
-        const configContent = `// @ts-check
-// TDAD Playwright Configuration - Generated by TDAD
-${importStatement}
-
-${exportStatement}
-  testDir: './workflows',
-  fullyParallel: ${workers > 1 ? 'true' : 'false'},
-  forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  workers: ${workers},
-  reporter: 'html',
-
-  use: {
-    trace: 'on-first-retry',
-  },
-
-  projects: [
-${projectsConfig}
-  ],
-});
-`;
-
-        fs.writeFileSync(configPath, configContent, 'utf-8');
-        return configPath;
-    }
-}
+module.exports = { test, expect };
