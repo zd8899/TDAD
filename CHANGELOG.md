@@ -5,6 +5,12 @@ All notable changes to the TDAD extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.8] - 2026-01-26
+
+### Added
+- TDAD test fixtures for enhanced trace capture and reporting
+- Improved debugging capabilities with comprehensive trace data
+
 ## [0.0.7] - 2026-01-16
 
 ### Changed
