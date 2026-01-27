@@ -605,11 +605,12 @@ export function activate(context: vscode.ExtensionContext) {
                 return;
             }
 
-            logExtension('connectSlack: About to show information message');
+            logExtension('connectSlack: About to show modal dialog');
 
-            // Show instructions first
+            // Show instructions first - use modal so it's impossible to miss
             const ready = await vscode.window.showInformationMessage(
                 'You will need both tokens ready:\n• Bot Token (xoxb-...)\n• App Token (xapp-...)\n\nCopy them from api.slack.com/apps before continuing.',
+                { modal: true },
                 'I have both tokens',
                 'Cancel'
             );
