@@ -693,6 +693,53 @@ export class SimplifiedWorkflowCanvasProvider {
         }
     }
 
+    /**
+     * Sprint 15: Slack Integration - Get all nodes for Slack commands
+     */
+    public getNodes() {
+        return this._nodeManager?.getNodes() || [];
+    }
+
+    /**
+     * Sprint 15: Slack Integration - Add a node from Slack command
+     */
+    public addNodeFromSlack(nodeData: any) {
+        if (this._nodeManager) {
+            const node = {
+                id: nodeData.id || `node-${Date.now()}`,
+                workflowId: nodeData.workflowId || 'default',
+                nodeType: nodeData.nodeType || 'file',
+                title: nodeData.title || 'Untitled',
+                description: nodeData.description || '',
+                position: nodeData.position || { x: 100, y: 100 },
+                preConditions: [],
+                features: [],
+                testData: {},
+                filePath: '',
+                language: 'typescript',
+                status: 'pending'
+            };
+            this._nodeManager.addNode(node as any);
+            this._loadCanvas(); // Refresh canvas
+        }
+    }
+
+    /**
+     * Sprint 15: Slack Integration - Get automation status for Slack commands
+     */
+    public getAutomationStatus(): { status: string; currentNodeId?: string; phase?: string; message?: string } {
+        if (this._automationHandlers?.isRunning()) {
+            const state = this._automationHandlers.getState();
+            return {
+                status: state?.status || 'running',
+                currentNodeId: state?.currentNodeId || undefined,
+                phase: state?.phase,
+                message: state?.message
+            };
+        }
+        return { status: 'idle' };
+    }
+
     public dispose() {
         SimplifiedWorkflowCanvasProvider.currentPanel = undefined;
 

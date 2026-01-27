@@ -246,6 +246,13 @@ export class AutomationHandlers {
     }
 
     /**
+     * Sprint 15: Get orchestrator state for Slack integration
+     */
+    getState(): OrchestratorState | null {
+        return this._agentOrchestrator?.getState() ?? null;
+    }
+
+    /**
      * Get the orchestrator instance (for external coordination)
      */
     getOrchestrator(): AgentOrchestrator | null {

@@ -112,6 +112,14 @@
       {
         "command": "tdad.migrateFeatureMap",
         "title": "TDAD: Migrate Feature Map to Hierarchical Structure"
+      },
+      {
+        "command": "tdad.connectSlack",
+        "title": "TDAD: Connect to Slack"
+      },
+      {
+        "command": "tdad.disconnectSlack",
+        "title": "TDAD: Disconnect from Slack"
       }
     ],
     "customEditors": [
@@ -295,6 +303,16 @@
           "type": "string",
           "default": "",
           "description": "Enter your Closed Beta access code here to unlock Auto-Pilot."
+        },
+        "tdad.slack.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable Slack remote control integration"
+        },
+        "tdad.slack.defaultChannel": {
+          "type": "string",
+          "default": "",
+          "description": "Default Slack channel ID for notifications (e.g., C01234567)"
         }
       }
     }
@@ -346,6 +364,7 @@
     "@reactflow/controls": "^11.2.14",
     "@reactflow/core": "^11.11.4",
     "@reactflow/minimap": "^11.7.14",
+    "@slack/bolt": "^4.6.0",
     "axios": "^1.6.0",
     "handlebars": "^4.7.8",
     "react": "^19.2.0",

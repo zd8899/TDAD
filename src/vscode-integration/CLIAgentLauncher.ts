@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
 import { logger } from '../shared/utils/Logger';
 import { FeatureGating } from '../shared/utils/FeatureGating';
 
@@ -43,9 +45,41 @@ export class CLIAgentLauncher {
     private terminal: vscode.Terminal | null = null;
     private readonly terminalName = 'TDAD Agent';
     private workspacePath: string;
+    private slackOutputEnabled: boolean = false;
 
     private constructor(workspacePath: string) {
         this.workspacePath = workspacePath;
+    }
+
+    /**
+     * Enable/disable Slack output capture
+     * When enabled, CLI output is tee'd to a log file for Slack streaming
+     */
+    public setSlackOutputEnabled(enabled: boolean): void {
+        this.slackOutputEnabled = enabled;
+        logger.log('CLI-AGENT-LAUNCHER', `Slack output capture: ${enabled ? 'enabled' : 'disabled'}`);
+    }
+
+    /**
+     * Get the path to the CLI output log file
+     */
+    public getOutputLogPath(): string {
+        return path.join(this.workspacePath, '.tdad', 'logs', 'cli-output.log');
+    }
+
+    /**
+     * Ensure logs directory exists and clear the log file
+     */
+    private prepareLogFile(): void {
+        const logPath = this.getOutputLogPath();
+        const logsDir = path.dirname(logPath);
+
+        if (!fs.existsSync(logsDir)) {
+            fs.mkdirSync(logsDir, { recursive: true });
+        }
+
+        // Clear the log file
+        fs.writeFileSync(logPath, '');
     }
 
     public static getInstance(workspacePath?: string): CLIAgentLauncher {
@@ -147,7 +181,12 @@ export class CLIAgentLauncher {
         terminal.show(true); // Show terminal, preserve focus on editor
 
         // Build the command by replacing placeholders and applying permission flags
-        const command = this.buildCommand(config.command, taskFile, config.permissionFlags);
+        let command = this.buildCommand(config.command, taskFile, config.permissionFlags);
+
+        // Wrap with tee for Slack output capture if enabled
+        if (this.slackOutputEnabled) {
+            command = this.wrapCommandWithOutputCapture(command);
+        }
 
         // Send command to terminal
         terminal.sendText(command);
@@ -202,6 +241,28 @@ export class CLIAgentLauncher {
         }
 
         return command;
+    }
+
+    /**
+     * Wrap command with output capture for Slack streaming
+     * Uses tee on Unix-like systems, Tee-Object on Windows PowerShell
+     */
+    private wrapCommandWithOutputCapture(command: string): string {
+        this.prepareLogFile();
+        const logPath = this.getOutputLogPath();
+
+        // Check platform and shell
+        const isWindows = os.platform() === 'win32';
+
+        if (isWindows) {
+            // For Windows, use PowerShell's Tee-Object or bash tee if using Git Bash
+            // Most dev environments on Windows use Git Bash or WSL, so try bash syntax
+            // The terminal might be PowerShell, Git Bash, or WSL - bash syntax works in Git Bash/WSL
+            return `${command} 2>&1 | tee "${logPath.replace(/\\/g, '/')}"`;
+        } else {
+            // Unix-like: use standard tee
+            return `${command} 2>&1 | tee "${logPath}"`;
+        }
     }
 
     /**

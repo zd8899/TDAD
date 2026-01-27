@@ -7,6 +7,8 @@ import { WorkflowController } from './core/workflows/WorkflowController'; // MVP
 import { TestRunner } from './vscode-integration/testing/TestRunner';
 import { logExtension, logError, logger } from './shared/utils/Logger';
 import { TDADBootstrap } from './vscode-integration/bootstrap/TDADBootstrap';
+import { SlackService, SlackCommandHandler, SlackCommandDependencies } from './infrastructure/slack';
+import { CLIAgentLauncher } from './vscode-integration/CLIAgentLauncher';
 
 export function activate(context: vscode.ExtensionContext) {
     let workflowController: WorkflowController;
@@ -587,7 +589,158 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
+    // Sprint 15: Slack Remote Control Integration
+    let slackService: SlackService | null = null;
+    let slackCommandHandler: SlackCommandHandler | null = null;
+
+    const connectSlackCommand = vscode.commands.registerCommand('tdad.connectSlack', async () => {
+        logExtension('connectSlack command executed');
+
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        if (!workspaceFolder) {
+            vscode.window.showErrorMessage('No workspace folder found');
+            return;
+        }
+
+        // Get tokens from user
+        const botToken = await vscode.window.showInputBox({
+            prompt: 'Enter Slack Bot Token (xoxb-...)',
+            password: true,
+            placeHolder: 'xoxb-your-bot-token'
+        });
+        if (!botToken) { return; }
+
+        const appToken = await vscode.window.showInputBox({
+            prompt: 'Enter Slack App Token (xapp-...)',
+            password: true,
+            placeHolder: 'xapp-your-app-token'
+        });
+        if (!appToken) { return; }
+
+        try {
+            // Store tokens securely
+            await context.secrets.store('tdad.slack.botToken', botToken);
+            await context.secrets.store('tdad.slack.appToken', appToken);
+
+            // Initialize Slack service
+            slackService = SlackService.getInstance();
+            await slackService.connect(botToken, appToken);
+
+            // Enable Slack output capture in CLI launcher
+            const cliLauncher = CLIAgentLauncher.getInstance(workspaceFolder.uri.fsPath);
+            cliLauncher.setSlackOutputEnabled(true);
+
+            // Set up command handler with dependencies
+            const deps: SlackCommandDependencies = {
+                getNodes: () => SimplifiedWorkflowCanvasProvider.currentPanel?.getNodes() || [],
+                addNode: (node) => SimplifiedWorkflowCanvasProvider.currentPanel?.addNodeFromSlack(node),
+                startAutomation: async () => {
+                    SimplifiedWorkflowCanvasProvider.currentPanel?.sendMessage({ command: 'startAutomation' });
+                },
+                stopAutomation: () => {
+                    SimplifiedWorkflowCanvasProvider.currentPanel?.sendMessage({ command: 'stopAutomation' });
+                },
+                getAutomationStatus: () => {
+                    return SimplifiedWorkflowCanvasProvider.currentPanel?.getAutomationStatus() || { status: 'unknown' };
+                },
+                runNodeTests: async (nodeId: string) => {
+                    SimplifiedWorkflowCanvasProvider.currentPanel?.sendMessage({ command: 'runTests', nodeId });
+                },
+                workspacePath: workspaceFolder.uri.fsPath
+            };
+
+            slackCommandHandler = new SlackCommandHandler(slackService, deps);
+
+            // Register slash command handler
+            slackService.onSlashCommand(async (payload) => {
+                await slackCommandHandler?.handleCommand(payload);
+            });
+
+            // Enable Slack in config
+            await vscode.workspace.getConfiguration('tdad').update('slack.enabled', true, vscode.ConfigurationTarget.Workspace);
+
+            vscode.window.showInformationMessage('✅ Connected to Slack! Use /tdad help in Slack to see available commands.');
+            logExtension('Slack connected successfully');
+
+        } catch (error: any) {
+            logError('EXTENSION', 'Failed to connect to Slack', error);
+            vscode.window.showErrorMessage(`Failed to connect to Slack: ${error.message}`);
+        }
+    });
+
+    const disconnectSlackCommand = vscode.commands.registerCommand('tdad.disconnectSlack', async () => {
+        logExtension('disconnectSlack command executed');
+
+        if (slackService) {
+            await slackService.disconnect();
+            slackService = null;
+            slackCommandHandler = null;
+
+            // Disable Slack output capture
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+            if (workspaceFolder) {
+                const cliLauncher = CLIAgentLauncher.getInstance(workspaceFolder.uri.fsPath);
+                cliLauncher.setSlackOutputEnabled(false);
+            }
+
+            // Update config
+            await vscode.workspace.getConfiguration('tdad').update('slack.enabled', false, vscode.ConfigurationTarget.Workspace);
+
+            vscode.window.showInformationMessage('Disconnected from Slack');
+            logExtension('Slack disconnected');
+        } else {
+            vscode.window.showInformationMessage('Not connected to Slack');
+        }
+    });
+
+    // Auto-connect to Slack if enabled and tokens are stored
+    const slackEnabled = vscode.workspace.getConfiguration('tdad').get('slack.enabled');
+    const slackWorkspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    if (slackEnabled && slackWorkspaceFolder) {
+        context.secrets.get('tdad.slack.botToken').then(async (botToken) => {
+            const appToken = await context.secrets.get('tdad.slack.appToken');
+            if (botToken && appToken) {
+                try {
+                    slackService = SlackService.getInstance();
+                    await slackService.connect(botToken, appToken);
+
+                    const cliLauncher = CLIAgentLauncher.getInstance(slackWorkspaceFolder.uri.fsPath);
+                    cliLauncher.setSlackOutputEnabled(true);
+
+                    const deps: SlackCommandDependencies = {
+                        getNodes: () => SimplifiedWorkflowCanvasProvider.currentPanel?.getNodes() || [],
+                        addNode: (node) => SimplifiedWorkflowCanvasProvider.currentPanel?.addNodeFromSlack(node),
+                        startAutomation: async () => {
+                            SimplifiedWorkflowCanvasProvider.currentPanel?.sendMessage({ command: 'startAutomation' });
+                        },
+                        stopAutomation: () => {
+                            SimplifiedWorkflowCanvasProvider.currentPanel?.sendMessage({ command: 'stopAutomation' });
+                        },
+                        getAutomationStatus: () => {
+                            return SimplifiedWorkflowCanvasProvider.currentPanel?.getAutomationStatus() || { status: 'unknown' };
+                        },
+                        runNodeTests: async (nodeId: string) => {
+                            SimplifiedWorkflowCanvasProvider.currentPanel?.sendMessage({ command: 'runTests', nodeId });
+                        },
+                        workspacePath: slackWorkspaceFolder.uri.fsPath
+                    };
+
+                    slackCommandHandler = new SlackCommandHandler(slackService, deps);
+                    slackService.onSlashCommand(async (payload) => {
+                        await slackCommandHandler?.handleCommand(payload);
+                    });
+
+                    logExtension('Slack auto-connected on startup');
+                } catch (error) {
+                    logError('EXTENSION', 'Failed to auto-connect Slack', error);
+                }
+            }
+        });
+    }
+
     context.subscriptions.push(
+        connectSlackCommand,
+        disconnectSlackCommand,
         openCanvasCommand,
         createNodeCommand,
         checkConfigCommand,
