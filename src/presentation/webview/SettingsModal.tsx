@@ -503,7 +503,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             ))}
                             <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
                                 <input type="text" value={newUrlName} onChange={(e) => setNewUrlName(e.target.value)} placeholder="Name (e.g. ui, api)" style={{ ...selectStyle, width: '120px' }} />
-                                <input type="text" value={newUrlValue} onChange={(e) => setNewUrlValue(e.target.value)} placeholder="http://localhost:5173" style={{ ...selectStyle, flex: 1 }} onKeyDown={e => e.key === 'Enter' && handleAddUrl()} />
+                                <input type="text" value={newUrlValue} onChange={(e) => setNewUrlValue(e.target.value)} placeholder="http://localhost:PORT" style={{ ...selectStyle, flex: 1 }} onKeyDown={e => e.key === 'Enter' && handleAddUrl()} />
                                 <button onClick={handleAddUrl} disabled={!newUrlName.trim() || !newUrlValue.trim()} style={{ padding: '6px 12px', background: 'var(--vscode-button-background)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>+ Add</button>
                             </div>
                         </div>

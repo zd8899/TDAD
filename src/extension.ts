@@ -175,7 +175,7 @@ export function activate(context: vscode.ExtensionContext) {
 
             const url = await vscode.window.showInputBox({
                 prompt: `Enter URL for "${name}"`,
-                placeHolder: 'http://localhost:8080'
+                placeHolder: 'http://localhost:PORT'
             });
             if (!url) { return; }
 
@@ -198,7 +198,7 @@ export function activate(context: vscode.ExtensionContext) {
             const newUrl = await vscode.window.showInputBox({
                 prompt: `Enter new URL for "${nameToEdit}"`,
                 value: urls[nameToEdit],
-                placeHolder: 'http://localhost:5173'
+                placeHolder: 'http://localhost:PORT'
             });
             if (!newUrl) { return; }
 
