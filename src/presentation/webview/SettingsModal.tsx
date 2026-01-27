@@ -692,6 +692,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         }
     };
 
+    const handleSaveBetaCode = () => {
+        if (isValidBetaCode(betaCode)) {
+            handleSave(() => {
+                postMessage({
+                    command: 'updateAutopilotSettings',
+                    autopilotSettings: { betaCode }
+                });
+            });
+        }
+    };
+
     return (
         <div className="tdad-modal-overlay">
             <div className="wizard-container" style={{ maxWidth: '800px', width: '90vw', height: '600px', maxHeight: '85vh', flexDirection: 'column', overflow: 'hidden' }}>
@@ -699,6 +710,54 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <h3 className="wizard-content-title" style={{ fontSize: '18px', margin: 0 }}>TDAD Settings</h3>
                     <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '18px', color: 'var(--vscode-descriptionForeground)' }}>✕</button>
                 </div>
+
+                {/* Beta Code Unlock Section */}
+                {!isAutopilotUnlocked && (
+                    <div style={{ padding: '12px 24px', background: 'rgba(124, 58, 237, 0.08)', borderBottom: '1px solid rgba(124, 58, 237, 0.2)', flexShrink: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'space-between' }}>
+                            <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: '13px', fontWeight: 600, color: '#7c3aed', marginBottom: '4px' }}>
+                                    Unlock Auto-Pilot (Beta)
+                                </div>
+                                <div style={{ fontSize: '11px', color: 'var(--vscode-descriptionForeground)' }}>
+                                    Enter your beta code to access the Auto-Pilot feature
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                <input
+                                    type="text"
+                                    placeholder="Enter beta code"
+                                    value={betaCode}
+                                    onChange={(e) => setBetaCode(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && isValidBetaCode(betaCode) && handleSaveBetaCode()}
+                                    style={{
+                                        ...selectStyle,
+                                        width: '160px',
+                                        padding: '6px 10px',
+                                        fontSize: '12px'
+                                    }}
+                                />
+                                <button
+                                    onClick={handleSaveBetaCode}
+                                    disabled={!isValidBetaCode(betaCode) || isSaving}
+                                    style={{
+                                        padding: '6px 16px',
+                                        background: isValidBetaCode(betaCode) ? 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)' : 'var(--vscode-button-secondaryBackground)',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        cursor: isValidBetaCode(betaCode) ? 'pointer' : 'not-allowed',
+                                        fontSize: '12px',
+                                        fontWeight: 600,
+                                        opacity: isValidBetaCode(betaCode) ? 1 : 0.5
+                                    }}
+                                >
+                                    {isSaving ? 'Unlocking...' : 'Unlock'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 <div style={{ display: 'flex', padding: '0 24px', borderBottom: '1px solid rgba(0,0,0,0.06)', flexShrink: 0 }}>
                     {(['project', 'testing', ...(isAutopilotUnlocked ? ['autopilot'] : []), 'prompts'] as SettingsTab[]).map((tab) => (
