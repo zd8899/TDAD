@@ -174,7 +174,7 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
                                 onRunAutomation();
                             }
                         }}
-                        title={isAutopilotComingSoon() ? 'Coming Soon - Click to join waitlist!' : (isRunningAutomation ? 'Stop Auto-Pilot' : 'Engage Auto-Pilot: Hands-free BDD → Test → Fix loop')}
+                        title={isAutopilotComingSoon() ? 'Coming Soon - Click to join waitlist!' : (isRunningAutomation ? 'Stop Auto-Pilot' : 'Engage Auto-Pilot: Hands-free Plan → Test → Fix loop')}
                     >
                         <span className="bottom-action-bar__icon">
                             {isAutopilotComingSoon() ? '✈' : (isRunningAutomation ? '■' : '✈')}
@@ -195,15 +195,15 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
                             className={bddMainClass}
                             onClick={onCopyBddPrompt}
                             disabled={isGeneratingBdd}
-                            title="Copy BDD Generation Prompt"
+                            title="Copy Plan Generation Prompt"
                         >
-                            <span>1. BDD</span>
+                            <span>1. Plan</span>
                         </button>
                         {hasBddSpec && (
                             <button
                                 className="bottom-action-bar__mini-btn"
                                 onClick={onOpenBddEditor}
-                                title="Edit BDD Spec"
+                                title="Edit Plan"
                             >
                                 ✎
                             </button>
@@ -266,7 +266,7 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
                         <div
                             className={`bottom-action-bar__progress-segment ${isBddWorking ? 'bottom-action-bar__progress-segment--animated' : ''}`}
                             style={{ backgroundColor: barColors[bddBarState] }}
-                            title="BDD Spec"
+                            title="Plan"
                         />
                         <div
                             className={`bottom-action-bar__progress-segment ${isTestGenWorking ? 'bottom-action-bar__progress-segment--animated' : ''}`}

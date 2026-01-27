@@ -104,7 +104,7 @@ const TestDetailsDialog: React.FC<TestDetailsDialogProps> = ({
                 <div className="test-details-dialog__content">
                     {testDetails.length === 0 ? (
                         <div className="test-details-dialog__empty">
-                            No tests found. Generate tests from BDD spec first.
+                            No tests found. Generate tests from plan first.
                         </div>
                     ) : (
                         <div className="test-details-dialog__list">

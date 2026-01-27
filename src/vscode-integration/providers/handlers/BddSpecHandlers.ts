@@ -183,15 +183,15 @@ export class BddSpecHandlers {
             });
 
             if (featureFileCreated) {
-                vscode.window.showInformationMessage(`✅ Feature file created & BDD Prompt copied! Paste into your AI coding tool (Cursor, Claude Code, etc.)`);
+                vscode.window.showInformationMessage(`✅ Feature file created & Plan Prompt copied! Paste into your AI coding tool (Cursor, Claude Code, etc.)`);
             } else {
-                vscode.window.showInformationMessage('✅ BDD Prompt copied! Paste into your AI coding tool (Cursor, Claude Code, etc.)');
+                vscode.window.showInformationMessage('✅ Plan Prompt copied! Paste into your AI coding tool (Cursor, Claude Code, etc.)');
             }
 
             logCanvas('BDD prompt copied to clipboard successfully');
         } catch (error) {
             logError('CANVAS', 'Failed to copy BDD prompt', error);
-            vscode.window.showErrorMessage(`Failed to copy BDD prompt: ${error}`);
+            vscode.window.showErrorMessage(`Failed to copy Plan prompt: ${error}`);
 
             this.webview.postMessage({
                 command: 'bddPromptCopied',
@@ -227,10 +227,10 @@ export class BddSpecHandlers {
                 filePath: fullPath
             });
 
-            vscode.window.showInformationMessage(`✅ BDD spec saved to ${filePath}`);
+            vscode.window.showInformationMessage(`✅ Plan saved to ${filePath}`);
         } catch (error) {
             logError('CANVAS', 'Failed to save BDD spec', error);
-            vscode.window.showErrorMessage(`Failed to save BDD spec: ${error}`);
+            vscode.window.showErrorMessage(`Failed to save plan: ${error}`);
             this.webview.postMessage({
                 command: 'error',
                 message: 'Failed to save BDD spec'

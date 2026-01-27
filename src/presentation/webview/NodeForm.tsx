@@ -197,7 +197,7 @@ const NodeForm: React.FC<NodeFormProps> = ({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 className="node-form__textarea"
-                placeholder="Write a clear description of what this feature should accomplish. This will be used to generate the BDD spec and test code.
+                placeholder="Write a clear description of what this feature should accomplish. This will be used to generate the plan and test code.
 
 Example: As a user, I need to be able to log in with username and password. The system should validate credentials against the database and create a session."
                 rows={6}

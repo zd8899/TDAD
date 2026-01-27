@@ -17,7 +17,7 @@ interface AutopilotConfirmDialogProps {
 }
 
 const MODE_OPTIONS: { value: AutopilotMode; label: string; icon: string; description: string }[] = [
-  { value: 'bdd', label: 'BDD', icon: '📋', description: 'Generate BDD specs' },
+  { value: 'bdd', label: 'Plan', icon: '📋', description: 'Generate plans' },
   { value: 'test', label: 'Test', icon: '🧪', description: 'Generate tests' },
   { value: 'run-fix', label: 'Run+Fix', icon: '🔄', description: 'Run and fix' }
 ];
@@ -76,7 +76,7 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
 
   const getSelectedDescription = () => {
     const parts: string[] = [];
-    if (selectedModes.has('bdd')) {parts.push('BDD specs');}
+    if (selectedModes.has('bdd')) {parts.push('Plans');}
     if (selectedModes.has('test')) {parts.push('Test generation');}
     if (selectedModes.has('run-fix')) {parts.push('Run & Fix');}
     if (parts.length === 0) {return 'Select at least one mode';}

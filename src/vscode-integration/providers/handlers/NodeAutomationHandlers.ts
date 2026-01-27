@@ -203,7 +203,7 @@ export class NodeAutomationHandlers {
 
                     if (passed) {
                         if (isBddOnly) {
-                            vscode.window.showInformationMessage(`✅ Automation complete: ${node.title} - BDD spec generated!`);
+                            vscode.window.showInformationMessage(`✅ Automation complete: ${node.title} - Plan generated!`);
                         } else if (isTestOnly) {
                             vscode.window.showInformationMessage(`✅ Automation complete: ${node.title} - Tests generated!`);
                         } else if (hasRunFix) {
@@ -246,7 +246,7 @@ export class NodeAutomationHandlers {
 
             await this.singleNodeOrchestrator.startSingleNode(node, allNodes, allEdges, modes);
 
-            const modeLabels = modes.map(m => m === 'bdd' ? 'BDD' : m === 'test' ? 'Test' : 'Run+Fix').join(' → ');
+            const modeLabels = modes.map(m => m === 'bdd' ? 'Plan' : m === 'test' ? 'Test' : 'Run+Fix').join(' → ');
             vscode.window.showInformationMessage(`🚀 Started automation (${modeLabels}) for "${node.title}"`);
 
         } catch (error) {

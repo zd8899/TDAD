@@ -59,7 +59,7 @@ const BddSpecEditorModal: React.FC<BddSpecEditorModalProps> = ({
             >
                 <div className="editor-modal__header">
                     <h2 className="editor-modal__title">
-                        📝 BDD Spec: {nodeTitle}
+                        📝 Plan: {nodeTitle}
                     </h2>
                     <button className="editor-modal__close" onClick={onClose}>
                         ×

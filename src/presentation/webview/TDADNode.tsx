@@ -280,7 +280,7 @@ const TDADNode: React.FC<NodeProps<TDADNodeData>> = ({ data, selected }) => {
           <div
             className={`tdad-node__progress-segment ${isBddWorking ? 'tdad-node__progress-segment--animated' : ''}`}
             style={{ backgroundColor: barColors[bddState] }}
-            title="BDD Spec"
+            title="Plan"
           />
           <div
             className={`tdad-node__progress-segment ${isTestGenWorking ? 'tdad-node__progress-segment--animated' : ''}`}

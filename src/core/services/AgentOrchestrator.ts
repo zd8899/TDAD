@@ -325,7 +325,7 @@ export class AgentOrchestrator {
         this.updateState({
             status: 'idle',
             phase: 'idle',
-            message: '✅ Blueprint generated! Loading nodes for BDD generation...'
+            message: '✅ Blueprint generated! Loading nodes for Plan generation...'
         });
         this.callbacks.onBlueprintComplete?.();
     }
@@ -347,7 +347,7 @@ export class AgentOrchestrator {
             currentNodeId: nextNode.id,
             currentRetry: 0,
             phase: 'bdd',
-            message: `📝 [${nextNode.title}] Step 1/4: Generating BDD spec...`
+            message: `📝 [${nextNode.title}] Step 1/4: Generating Plan...`
         });
 
         await this.taskWriter.writeTaskForNode(

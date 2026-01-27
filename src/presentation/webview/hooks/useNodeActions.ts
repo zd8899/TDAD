@@ -199,7 +199,7 @@ export function useNodeActions(
                         // Show canvas notification
                         if (onNotification) {
                             onNotification(
-                                'BDD folder created. Prompt copied! Paste it to your AI Agent',
+                                'Plan folder created. Prompt copied! Paste it to your AI Agent',
                                 message.bddSpecFilePath || undefined,
                                 'success'
                             );

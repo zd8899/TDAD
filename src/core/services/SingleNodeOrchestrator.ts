@@ -294,7 +294,7 @@ export class SingleNodeOrchestrator {
         this.taskFileManager.writeNextTask(taskContext);
 
         this.updateState({
-            message: `Waiting for agent to generate BDD spec for ${node.title}...`
+            message: `Waiting for agent to generate plan for ${node.title}...`
         });
 
         this.callbacks.onTaskWritten?.(`.tdad${path.sep}NEXT_TASK.md`, `GENERATE_BDD: ${node.title}`);
@@ -318,7 +318,7 @@ export class SingleNodeOrchestrator {
         if (!shouldGenerateTests && !shouldRunTests) {
             // Only BDD was selected, complete now
             logger.log('SINGLE-NODE-ORCHESTRATOR', `BDD-only mode - completing automation`);
-            this.completeAutomation(true, 'BDD spec generated successfully');
+            this.completeAutomation(true, 'Plan generated successfully');
             return;
         }
 
