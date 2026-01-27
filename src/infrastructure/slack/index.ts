@@ -4,5 +4,8 @@
  */
 
 export { SlackService } from './SlackService';
-export { SlackCommandHandler, SlackCommandDependencies } from './SlackCommandHandler';
+export { SlackCommandHandler } from './SlackCommandHandler';
 export { CLIOutputWatcher } from './CLIOutputWatcher';
+
+// Re-export types from shared
+export type { SlackCommandDependencies, AutomationStatus } from '../../shared/types/slack';

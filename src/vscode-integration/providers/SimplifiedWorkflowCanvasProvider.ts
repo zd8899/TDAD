@@ -725,16 +725,53 @@ export class SimplifiedWorkflowCanvasProvider {
     }
 
     /**
+     * Sprint 15: Slack Integration - Update a node from Slack command
+     */
+    public updateNodeFromSlack(nodeData: any) {
+        if (this._nodeManager && nodeData?.id) {
+            this._nodeManager.updateNode(nodeData);
+            this._loadCanvas(); // Refresh canvas
+        }
+    }
+
+    /**
      * Sprint 15: Slack Integration - Get automation status for Slack commands
      */
-    public getAutomationStatus(): { status: string; currentNodeId?: string; phase?: string; message?: string } {
+    public getAutomationStatus(): {
+        status: string;
+        currentNodeId?: string;
+        phase?: string;
+        message?: string;
+        processedNodes?: string[];
+        failedNodes?: string[];
+        currentRetry?: number;
+        maxRetries?: number;
+    } {
+        // Check single-node orchestrator first
+        const singleNodeOrchestrator = this._testWorkflowHandlers?.getSingleNodeOrchestrator?.();
+        if (singleNodeOrchestrator?.isRunning()) {
+            const state = singleNodeOrchestrator.getState();
+            return {
+                status: state?.status || 'running',
+                currentNodeId: state?.nodeId || undefined,
+                phase: state?.phase,
+                message: state?.message,
+                currentRetry: state?.currentRetry,
+                maxRetries: state?.maxRetries
+            };
+        }
+
+        // Check multi-node automation handler
         if (this._automationHandlers?.isRunning()) {
             const state = this._automationHandlers.getState();
             return {
                 status: state?.status || 'running',
                 currentNodeId: state?.currentNodeId || undefined,
                 phase: state?.phase,
-                message: state?.message
+                message: state?.message,
+                processedNodes: state?.processedNodes,
+                failedNodes: state?.failedNodes,
+                currentRetry: state?.currentRetry
             };
         }
         return { status: 'idle' };

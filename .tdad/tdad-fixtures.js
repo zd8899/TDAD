@@ -292,6 +292,69 @@ const test = base.extend({
             }
         }
 
+        /**
+         * Save trace JSON file directly during test teardown
+         * Ensures trace files are generated regardless of how tests are run (CLI or UI)
+         */
+        function saveTraceFile(testTitle, testFile, trace, testStatus, testDuration, testError) {
+            try {
+                let workflowPath = '';
+                const workflowsMatch = testFile.match(/\.tdad[\\/]workflows[\\/](.+)[\\/][^\\/]+\.test\.js$/);
+                if (workflowsMatch) {
+                    workflowPath = workflowsMatch[1].replace(/\\/g, '/');
+                }
+                if (!workflowPath) return;
+
+                const safeTestTitle = testTitle
+                    .toLowerCase()
+                    .replace(/[\s/\\]+/g, '-')
+                    .replace(/[^a-z0-9-]/g, '')
+                    .replace(/-+/g, '-')
+                    .replace(/^-|-$/g, '')
+                    .substring(0, 50);
+
+                const traceDir = path.join(workspaceRoot, '.tdad', 'debug', workflowPath, 'trace-files');
+                if (!fs.existsSync(traceDir)) {
+                    fs.mkdirSync(traceDir, { recursive: true });
+                }
+
+                const fileName = `trace-${safeTestTitle}.json`;
+                const filePath = path.join(traceDir, fileName);
+
+                const traceData = {
+                    testTitle: testTitle,
+                    timestamp: new Date().toISOString(),
+                    status: testStatus || trace.status || 'unknown',
+                    duration: testDuration ?? trace.duration ?? null,
+                    errorMessage: testError ? (testError.message || String(testError)) : null,
+                    callStack: [],
+                    apiRequests: trace.apiRequests || [],
+                    consoleLogs: trace.consoleLogs || [],
+                    pageErrors: trace.pageErrors || [],
+                    actionResult: trace.actionResult || null,
+                    domSnapshot: trace.domSnapshot || null,
+                    screenshotPath: trace.screenshotPath || null
+                };
+
+                if (testError && testError.stack) {
+                    const lines = testError.stack.split('\n');
+                    for (const line of lines) {
+                        const match = line.match(/at\s+(?:(.+?)\s+\()?(.+?):(\d+):(\d+)\)?/);
+                        if (match) {
+                            traceData.callStack.push({
+                                func: match[1] || undefined,
+                                file: match[2],
+                                line: parseInt(match[3], 10),
+                                column: parseInt(match[4], 10)
+                            });
+                        }
+                    }
+                }
+
+                fs.writeFileSync(filePath, JSON.stringify(traceData, null, 2), 'utf-8');
+            } catch (e) { /* Silently fail - trace file is non-critical */ }
+        }
+
         page.on('pageerror', async (error) => {
             const errorEntry = {
                 message: error.message,
@@ -336,6 +399,32 @@ const test = base.extend({
             domSnapshot: domSnapshot,
             screenshotPath: screenshotPath
         });
+
+        // Save trace JSON file directly (works for both CLI and UI test runs)
+        const finalTrace = {
+            status: testInfo.status,
+            duration: testInfo.duration,
+            apiRequests: [],
+            consoleLogs: [],
+            pageErrors: [],
+            actionResult: null,
+            domSnapshot: domSnapshot,
+            screenshotPath: screenshotPath
+        };
+        // Read back the accumulated trace data from coverage file
+        try {
+            if (fs.existsSync(coveragePath)) {
+                const coverageData = JSON.parse(fs.readFileSync(coveragePath, 'utf-8'));
+                const testTrace = coverageData.testTraces?.[testTitle];
+                if (testTrace) {
+                    finalTrace.apiRequests = testTrace.apiRequests || [];
+                    finalTrace.consoleLogs = testTrace.consoleLogs || [];
+                    finalTrace.pageErrors = testTrace.pageErrors || [];
+                    finalTrace.actionResult = testTrace.actionResult;
+                }
+            }
+        } catch (e) { /* Use empty trace if read fails */ }
+        saveTraceFile(testTitle, testInfo.file, finalTrace, testInfo.status, testInfo.duration, testInfo.error);
     }, { auto: true }]
 });
 
