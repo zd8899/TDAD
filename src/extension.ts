@@ -596,35 +596,55 @@ export function activate(context: vscode.ExtensionContext) {
     const connectSlackCommand = vscode.commands.registerCommand('tdad.connectSlack', async () => {
         logExtension('connectSlack command executed');
 
-        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-        if (!workspaceFolder) {
-            vscode.window.showErrorMessage('No workspace folder found');
-            return;
-        }
-
-        // Get tokens from user
-        const botToken = await vscode.window.showInputBox({
-            prompt: 'Enter Slack Bot Token (xoxb-...)',
-            password: true,
-            placeHolder: 'xoxb-your-bot-token'
-        });
-        if (!botToken) { return; }
-
-        const appToken = await vscode.window.showInputBox({
-            prompt: 'Enter Slack App Token (xapp-...)',
-            password: true,
-            placeHolder: 'xapp-your-app-token'
-        });
-        if (!appToken) { return; }
-
         try {
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+            logExtension(`connectSlack: workspaceFolder = ${workspaceFolder?.uri.fsPath || 'null'}`);
+
+            if (!workspaceFolder) {
+                vscode.window.showErrorMessage('No workspace folder found');
+                return;
+            }
+
+            logExtension('connectSlack: About to show information message');
+
+            // Show instructions first
+            const ready = await vscode.window.showInformationMessage(
+                'You will need both tokens ready:\n• Bot Token (xoxb-...)\n• App Token (xapp-...)\n\nCopy them from api.slack.com/apps before continuing.',
+                'I have both tokens',
+                'Cancel'
+            );
+
+            logExtension(`connectSlack: User response = ${ready}`);
+            if (ready !== 'I have both tokens') { return; }
+
+            // Get tokens from user - ignoreFocusOut keeps the box open when switching tabs
+            const botToken = await vscode.window.showInputBox({
+                prompt: 'Enter Slack Bot Token (xoxb-...)',
+                password: true,
+                placeHolder: 'xoxb-your-bot-token',
+                ignoreFocusOut: true
+            });
+            if (!botToken) { return; }
+
+            const appToken = await vscode.window.showInputBox({
+                prompt: 'Enter Slack App Token (xapp-...)',
+                password: true,
+                placeHolder: 'xapp-your-app-token',
+                ignoreFocusOut: true
+            });
+            if (!appToken) { return; }
+
             // Store tokens securely
             await context.secrets.store('tdad.slack.botToken', botToken);
             await context.secrets.store('tdad.slack.appToken', appToken);
 
+            logExtension('connectSlack: Tokens stored, initializing Slack service');
+
             // Initialize Slack service
             slackService = SlackService.getInstance();
             await slackService.connect(botToken, appToken);
+
+            logExtension('connectSlack: Slack service connected');
 
             // Enable Slack output capture in CLI launcher
             const cliLauncher = CLIAgentLauncher.getInstance(workspaceFolder.uri.fsPath);
