@@ -48,7 +48,10 @@ export class SlackService {
                 const context: SlackMessageContext = {
                     channelId: command.channel_id,
                     userId: command.user_id,
-                    responseUrl: command.response_url
+                    responseUrl: command.response_url,
+                    respond: async (message: string) => {
+                        await respond(message);
+                    }
                 };
 
                 logger.log('SLACK', `Received command: /tdad ${command.text}`);

@@ -66,11 +66,7 @@ export class SlackCommandHandler {
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : 'Unknown error';
             logger.error('SLACK-CMD', `Error handling ${command}`, error);
-            await this.slackService.sendMessage(
-                context.channelId,
-                `❌ Error: ${errorMsg}`,
-                context.threadTs
-            );
+            await this.reply(context, `❌ Error: ${errorMsg}`);
         }
     }
 
@@ -80,11 +76,7 @@ export class SlackCommandHandler {
         if (subCommand === 'create') {
             const nodeName = args.slice(1).join(' ');
             if (!nodeName) {
-                await this.slackService.sendMessage(
-                    context.channelId,
-                    '❌ Usage: `/tdad node create <name>`',
-                    context.threadTs
-                );
+                await this.reply(context, '❌ Usage: `/tdad node create <name>`');
                 return;
             }
 
@@ -98,19 +90,10 @@ export class SlackCommandHandler {
             };
 
             this.deps.addNode(newNode);
-            await this.slackService.sendMessage(
-                context.channelId,
-                `✅ Created node: *${nodeName}*`,
-                context.threadTs
-            );
-
+            await this.reply(context, `✅ Created node: *${nodeName}*`);
             logger.log('SLACK-CMD', `Created node: ${nodeName}`);
         } else {
-            await this.slackService.sendMessage(
-                context.channelId,
-                '❌ Usage: `/tdad node create <name>`',
-                context.threadTs
-            );
+            await this.reply(context, '❌ Usage: `/tdad node create <name>`');
         }
     }
 
@@ -118,31 +101,33 @@ export class SlackCommandHandler {
         const subCommand = args[0]?.toLowerCase();
 
         if (subCommand === 'start') {
-            // Send initial message and get thread timestamp
-            const threadTs = await this.slackService.sendMessage(
-                context.channelId,
-                '🚀 Starting autopilot...'
-            );
+            // For autopilot start, we need to post to channel to create a thread
+            // First respond to slash command
+            await this.reply(context, '🚀 Starting autopilot...');
 
-            if (threadTs) {
-                // Start CLI output watcher for this thread
-                const watcher = new CLIOutputWatcher(
-                    this.slackService,
+            // Then post to channel if bot has access (for thread-based output)
+            try {
+                const threadTs = await this.slackService.sendMessage(
                     context.channelId,
-                    threadTs,
-                    this.deps.workspacePath
+                    '📺 *Autopilot Output Thread* - CLI output will appear here'
                 );
-                watcher.startWatching();
-                this.activeThreads.set(threadTs, watcher);
+
+                if (threadTs) {
+                    // Start CLI output watcher for this thread
+                    const watcher = new CLIOutputWatcher(
+                        this.slackService,
+                        context.channelId,
+                        threadTs,
+                        this.deps.workspacePath
+                    );
+                    watcher.startWatching();
+                    this.activeThreads.set(threadTs, watcher);
+                }
+            } catch (err) {
+                logger.log('SLACK-CMD', 'Could not create output thread - bot may not be in channel');
             }
 
             await this.deps.startAutomation();
-
-            await this.slackService.sendMessage(
-                context.channelId,
-                '✅ Autopilot started! CLI output will appear in this thread.',
-                threadTs
-            );
 
         } else if (subCommand === 'stop') {
             this.deps.stopAutomation();
@@ -153,29 +138,17 @@ export class SlackCommandHandler {
             }
             this.activeThreads.clear();
 
-            await this.slackService.sendMessage(
-                context.channelId,
-                '⏹️ Autopilot stopped.',
-                context.threadTs
-            );
+            await this.reply(context, '⏹️ Autopilot stopped.');
 
         } else {
-            await this.slackService.sendMessage(
-                context.channelId,
-                '❌ Usage: `/tdad autopilot start` or `/tdad autopilot stop`',
-                context.threadTs
-            );
+            await this.reply(context, '❌ Usage: `/tdad autopilot start` or `/tdad autopilot stop`');
         }
     }
 
     private async handleTestCommand(args: string[], context: SlackMessageContext): Promise<void> {
         const nodeName = args.join(' ');
         if (!nodeName) {
-            await this.slackService.sendMessage(
-                context.channelId,
-                '❌ Usage: `/tdad test <node-name>`',
-                context.threadTs
-            );
+            await this.reply(context, '❌ Usage: `/tdad test <node-name>`');
             return;
         }
 
@@ -186,27 +159,12 @@ export class SlackCommandHandler {
         );
 
         if (!node) {
-            await this.slackService.sendMessage(
-                context.channelId,
-                `❌ Node not found: *${nodeName}*`,
-                context.threadTs
-            );
+            await this.reply(context, `❌ Node not found: *${nodeName}*`);
             return;
         }
 
-        await this.slackService.sendMessage(
-            context.channelId,
-            `🧪 Running tests for: *${node.title}*...`,
-            context.threadTs
-        );
-
+        await this.reply(context, `🧪 Running tests for: *${node.title}*...`);
         await this.deps.runNodeTests(node.id);
-
-        await this.slackService.sendMessage(
-            context.channelId,
-            `✅ Tests completed for: *${node.title}*`,
-            context.threadTs
-        );
     }
 
     private async handleStatusCommand(context: SlackMessageContext): Promise<void> {
@@ -235,7 +193,7 @@ export class SlackCommandHandler {
             message += `\n💬 ${status.message}`;
         }
 
-        await this.slackService.sendMessage(context.channelId, message, context.threadTs);
+        await this.reply(context, message);
     }
 
     private async handleNodesCommand(context: SlackMessageContext): Promise<void> {
@@ -243,11 +201,7 @@ export class SlackCommandHandler {
         const featureNodes = nodes.filter(n => !isFolderNode(n));
 
         if (featureNodes.length === 0) {
-            await this.slackService.sendMessage(
-                context.channelId,
-                '📋 No nodes found.',
-                context.threadTs
-            );
+            await this.reply(context, '📋 No nodes found.');
             return;
         }
 
@@ -257,31 +211,19 @@ export class SlackCommandHandler {
             return `${i + 1}. ${statusEmoji} ${n.title}`;
         }).join('\n');
 
-        await this.slackService.sendMessage(
-            context.channelId,
-            `📋 *Nodes (${featureNodes.length}):*\n${nodeList}`,
-            context.threadTs
-        );
+        await this.reply(context, `📋 *Nodes (${featureNodes.length}):*\n${nodeList}`);
     }
 
     private async handleSayCommand(args: string[], context: SlackMessageContext): Promise<void> {
         const message = args.join(' ');
         if (!message) {
-            await this.slackService.sendMessage(
-                context.channelId,
-                '❌ Usage: `/tdad say <message to send to CLI>`',
-                context.threadTs
-            );
+            await this.reply(context, '❌ Usage: `/tdad say <message to send to CLI>`');
             return;
         }
 
         const launcher = CLIAgentLauncher.getInstance(this.deps.workspacePath);
         if (!launcher) {
-            await this.slackService.sendMessage(
-                context.channelId,
-                '❌ CLI agent not initialized.',
-                context.threadTs
-            );
+            await this.reply(context, '❌ CLI agent not initialized.');
             return;
         }
 
@@ -289,18 +231,10 @@ export class SlackCommandHandler {
         const terminal = vscode.window.terminals.find(t => t.name === 'TDAD Agent');
         if (terminal) {
             terminal.sendText(message);
-            await this.slackService.sendMessage(
-                context.channelId,
-                `📤 Sent to CLI: \`${message}\``,
-                context.threadTs
-            );
+            await this.reply(context, `📤 Sent to CLI: \`${message}\``);
             logger.log('SLACK-CMD', `Sent to terminal: ${message}`);
         } else {
-            await this.slackService.sendMessage(
-                context.channelId,
-                '❌ No active TDAD Agent terminal found.',
-                context.threadTs
-            );
+            await this.reply(context, '❌ No active TDAD Agent terminal found.');
         }
     }
 
@@ -309,17 +243,9 @@ export class SlackCommandHandler {
         const terminal = vscode.window.terminals.find(t => t.name === 'TDAD Agent');
         if (terminal) {
             terminal.sendText('\x03'); // Ctrl+C
-            await this.slackService.sendMessage(
-                context.channelId,
-                '⏹️ Sent cancel signal (Ctrl+C) to CLI.',
-                context.threadTs
-            );
+            await this.reply(context, '⏹️ Sent cancel signal (Ctrl+C) to CLI.');
         } else {
-            await this.slackService.sendMessage(
-                context.channelId,
-                '❌ No active TDAD Agent terminal found.',
-                context.threadTs
-            );
+            await this.reply(context, '❌ No active TDAD Agent terminal found.');
         }
 
         // Also stop automation
@@ -353,7 +279,20 @@ export class SlackCommandHandler {
 
 ❓ \`/tdad help\` - Show this help`;
 
-        await this.slackService.sendMessage(context.channelId, helpText, context.threadTs);
+        await this.reply(context, helpText);
+    }
+
+    /**
+     * Reply to a slash command - uses respond() for slash commands, sendMessage for threads
+     */
+    private async reply(context: SlackMessageContext, message: string): Promise<void> {
+        // For slash commands, use respond() which doesn't require channel membership
+        if (context.respond && !context.threadTs) {
+            await context.respond(message);
+        } else {
+            // For thread replies or when respond isn't available, use sendMessage
+            await this.slackService.sendMessage(context.channelId, message, context.threadTs);
+        }
     }
 
     public dispose(): void {

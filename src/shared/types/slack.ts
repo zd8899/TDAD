@@ -13,6 +13,7 @@ export interface SlackMessageContext {
     threadTs?: string;
     userId: string;
     responseUrl?: string;
+    respond?: (message: string) => Promise<void>;
 }
 
 export interface SlackCommandPayload {
