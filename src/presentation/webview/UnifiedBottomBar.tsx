@@ -30,8 +30,6 @@ interface UnifiedBottomBarProps {
     allNodesProgress?: string;
     onRunAllNodes?: () => void;
     onStopAllNodes?: () => void;
-    // Autopilot settings
-    autopilotBetaCode?: string;
     onOpenFeedback?: () => void;
 
     // BottomActionBar Props (Context Actions)
@@ -123,7 +121,6 @@ export const UnifiedBottomBar: React.FC<UnifiedBottomBarProps> = (props) => {
                 allNodesProgress={props.allNodesProgress}
                 onRunAllNodes={props.onRunAllNodes}
                 onStopAllNodes={props.onStopAllNodes}
-                autopilotBetaCode={props.autopilotBetaCode}
                 onOpenFeedback={props.onOpenFeedback}
             />
         </div>

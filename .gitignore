@@ -9,6 +9,7 @@ Thumbs.db
 .env
 .env.local
 *.map
+.tdad/
 
 # Vite build artifacts
 media/assets/*.css

@@ -144,9 +144,6 @@ export function createMessageHandler(
             case 'autopilotInfo':
                 handleAutopilotInfo(message, state, deps);
                 break;
-            case 'autopilotSettingsUpdated':
-                handleAutopilotSettingsUpdated(message, state);
-                break;
         }
     };
 }
@@ -164,17 +161,6 @@ function handleLoadNodes(message: any, state: CanvasMessageState, deps: CanvasMe
             markerEnd: { type: MarkerType.ArrowClosed }
         }));
         state.setEdges(enhancedEdges);
-    }
-
-    // Load autopilot settings if included
-    if (message.autopilotSettings) {
-        state.setSettingsData((prev: any) => {
-            const newSettings = {
-                ...prev,
-                autopilotSettings: message.autopilotSettings
-            };
-            return newSettings;
-        });
     }
 
     loadNodesFromExtension(
@@ -337,14 +323,3 @@ function handleAutopilotInfo(message: any, state: CanvasMessageState, deps: Canv
     }
 }
 
-function handleAutopilotSettingsUpdated(message: any, state: CanvasMessageState) {
-    if (message.autopilotSettings) {
-        state.setSettingsData((prev: any) => {
-            const newSettings = {
-                ...prev,
-                autopilotSettings: message.autopilotSettings
-            };
-            return newSettings;
-        });
-    }
-}

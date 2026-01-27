@@ -240,21 +240,12 @@ export class SimplifiedWorkflowCanvasProvider {
             });
         }
 
-        // Load autopilot settings to send with nodes
-        const config = vscode.workspace.getConfiguration('tdad');
-        const betaCode = config.get<string>('betaAccessCode');
-        logCanvas(`[AUTOPILOT DEBUG] Loading beta code from config: ${betaCode ? '***' : 'none'}`);
-
-        const autopilotSettings = betaCode ? { betaCode } : undefined;
-        logCanvas(`[AUTOPILOT DEBUG] Sending autopilot settings with loadNodes: ${autopilotSettings ? 'yes' : 'no'}`);
-
         this._panel.webview.postMessage({
             command: 'loadNodes',
             nodes: nodesToSend,
             edges: edgesToSend,
             currentFolderId: this._currentFolderId,
-            breadcrumbPath: this._breadcrumbPath,
-            autopilotSettings
+            breadcrumbPath: this._breadcrumbPath
         });
     }
 
@@ -472,10 +463,6 @@ export class SimplifiedWorkflowCanvasProvider {
 
                         case 'updateCLISettings':
                             await this._settingsHandlers.handleUpdateCLISettings(message.cliSettings);
-                            break;
-
-                        case 'updateAutopilotSettings':
-                            await this._settingsHandlers.handleUpdateAutopilotSettings(message.autopilotSettings);
                             break;
 
                         // Navigation handlers (delegated)

@@ -143,32 +143,6 @@ export class CLIAgentLauncher {
      * @param taskDescription - Optional description for logging
      */
     public triggerAgent(taskFile = '.tdad/NEXT_TASK.md', taskDescription?: string): void {
-        /*
-        // SECURITY: Hard-gate for Day 1 Launch - prevent bypass via settings
-        // Exception: Users with valid Beta Access Code
-        const betaCode = vscode.workspace.getConfiguration('tdad').get<string>('betaAccessCode');
-        
-        // If you are reading this on GitHub: Yes, this is the beta code. 
-        // You found the easter egg! Enjoy the early access :)
-        const isBetaUser = betaCode === 'TDAD-BETA-2024';
-
-        if (FeatureGating.isComingSoon('autopilot') && !isBetaUser) {
-            const message = FeatureGating.getComingSoonMessage('autopilot');
-            const signupUrl = FeatureGating.getSignupUrl('autopilot');
-            
-            vscode.window.showInformationMessage(message, "Join Waitlist", "Enter Beta Code")
-                .then(selection => {
-                    if (selection === "Join Waitlist" && signupUrl) {
-                        vscode.env.openExternal(vscode.Uri.parse(signupUrl));
-                    } else if (selection === "Enter Beta Code") {
-                        vscode.commands.executeCommand('workbench.action.openSettings', 'tdad.betaAccessCode');
-                    }
-                });
-            logger.log('CLI-AGENT-LAUNCHER', 'Blocked triggerAgent: Feature is gated (Coming Soon) and no valid beta code found');
-            return;
-        }
-        */
-
         const config = this.getConfig();
 
         if (!config.enabled) {

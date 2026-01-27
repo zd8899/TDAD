@@ -836,7 +836,6 @@ const CanvasApp: React.FC = () => {
               allNodesProgress={allNodesProgress}
               onRunAllNodes={handleRunAllNodes}
               onStopAllNodes={handleStopAllNodes}
-              autopilotBetaCode={settingsData?.autopilotSettings?.betaCode}
               onOpenFeedback={() => postMessage({ command: 'openFeedback' })}
 
               // Context Actions (BottomActionBar)
@@ -1031,8 +1030,6 @@ const CanvasApp: React.FC = () => {
               setSettingsInitialTab('autopilot');
               setShowSettings(true);
             }}
-            existingBetaCode={settingsData?.autopilotSettings?.betaCode}
-            postMessage={postMessage}
           />
         );
       })()}

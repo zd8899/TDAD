@@ -299,11 +299,6 @@
           },
           "description": "CLI-specific permission flags for hands-free automation"
         },
-        "tdad.betaAccessCode": {
-          "type": "string",
-          "default": "",
-          "description": "Enter your Closed Beta access code here to unlock Auto-Pilot."
-        },
         "tdad.slack.enabled": {
           "type": "boolean",
           "default": false,

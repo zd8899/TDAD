@@ -160,31 +160,4 @@ export class SettingsHandlers {
         }
     }
 
-    /**
-     * Update Autopilot settings (beta code unlock)
-     */
-    async handleUpdateAutopilotSettings(autopilotSettings: { betaCode?: string }): Promise<void> {
-        try {
-            const config = vscode.workspace.getConfiguration('tdad');
-
-            if (autopilotSettings.betaCode !== undefined) {
-                logCanvas(`[AUTOPILOT DEBUG] Saving beta code to global config: ${autopilotSettings.betaCode ? '***' : 'none'}`);
-                await config.update('betaAccessCode', autopilotSettings.betaCode, vscode.ConfigurationTarget.Global);
-                logCanvas('[AUTOPILOT DEBUG] Beta code saved successfully');
-            }
-
-            logCanvas('Autopilot settings updated');
-            vscode.window.showInformationMessage('Autopilot unlocked! The Autopilot tab is now visible in Settings.');
-
-            // Send updated settings back to webview
-            logCanvas('[AUTOPILOT DEBUG] Sending autopilotSettingsUpdated message to webview');
-            this.webview.postMessage({
-                command: 'autopilotSettingsUpdated',
-                autopilotSettings: { betaCode: autopilotSettings.betaCode }
-            });
-        } catch (error) {
-            logError('CANVAS', 'Failed to update autopilot settings', error);
-            vscode.window.showErrorMessage('Failed to save autopilot settings: ' + (error instanceof Error ? error.message : 'Unknown error'));
-        }
-    }
 }

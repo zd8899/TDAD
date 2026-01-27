@@ -1,6 +1,5 @@
 import React from 'react';
 import '../../styles/canvas-controls.css';
-import { isAutopilotComingSoon, isValidBetaCode } from '../../shared/utils/FeatureGating';
 
 interface CanvasControlsProps {
   hasSelectedNode: boolean;
@@ -8,7 +7,6 @@ interface CanvasControlsProps {
   onAddFolder: () => void;
   onOpenSettings?: () => void;
   onRefreshCanvas?: () => void;
-  onOpenWaitlist?: () => void;
   onOpenBlueprintWizard?: () => void;
   // Undo/Redo
   canUndo?: boolean;
@@ -26,8 +24,6 @@ interface CanvasControlsProps {
   allNodesProgress?: string;
   onRunAllNodes?: () => void;
   onStopAllNodes?: () => void;
-  // Autopilot settings
-  autopilotBetaCode?: string;
   onOpenFeedback?: () => void;
 }
 
@@ -36,7 +32,6 @@ const CanvasControls: React.FC<CanvasControlsProps> = ({
   onAddFolder,
   onOpenSettings,
   onRefreshCanvas,
-  onOpenWaitlist,
   onOpenBlueprintWizard,
   canUndo = false,
   canRedo = false,
@@ -46,17 +41,10 @@ const CanvasControls: React.FC<CanvasControlsProps> = ({
   allNodesProgress,
   onRunAllNodes,
   onStopAllNodes,
-  autopilotBetaCode,
   onOpenFeedback
 }) => {
-  // Check if autopilot is unlocked via beta code
-  const hasValidBetaCode = autopilotBetaCode && isValidBetaCode(autopilotBetaCode);
-  const autopilotComingSoon = isAutopilotComingSoon() && !hasValidBetaCode;
-
   const handleAutopilotClick = () => {
-    if (autopilotComingSoon) {
-      onOpenWaitlist?.();
-    } else if (isRunningAllNodes) {
+    if (isRunningAllNodes) {
       onStopAllNodes?.();
     } else {
       onRunAllNodes?.();
@@ -69,14 +57,14 @@ const CanvasControls: React.FC<CanvasControlsProps> = ({
       <div className="canvas-controls__auto-container">
         <button
           onClick={handleAutopilotClick}
-          className={`canvas-controls__segment canvas-controls__segment--auto ${isRunningAllNodes ? 'canvas-controls__segment--active' : ''} ${autopilotComingSoon ? 'canvas-controls__segment--coming-soon' : ''}`}
-          disabled={!autopilotComingSoon && isRunningAllNodes && !onStopAllNodes}
-          title={autopilotComingSoon ? 'Coming Soon - Click to join waitlist!' : (isRunningAllNodes ? `Stop Auto-Pilot (${allNodesProgress || 'running...'})` : 'Engage Auto-Pilot for all pending nodes')}
+          className={`canvas-controls__segment canvas-controls__segment--auto ${isRunningAllNodes ? 'canvas-controls__segment--active' : ''}`}
+          disabled={isRunningAllNodes && !onStopAllNodes}
+          title={isRunningAllNodes ? `Stop Auto-Pilot (${allNodesProgress || 'running...'})` : 'Engage Auto-Pilot for all pending nodes'}
         >
           <span className="canvas-controls__icon">
-            {autopilotComingSoon ? '✈' : (isRunningAllNodes ? '■' : '✈')}
+            {isRunningAllNodes ? '■' : '✈'}
           </span>
-          <span>{autopilotComingSoon ? 'Auto-Pilot (Coming Soon)' : 'Auto-Pilot All'}</span>
+          <span>Auto-Pilot All</span>
         </button>
       </div>
 

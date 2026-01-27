@@ -45,7 +45,3 @@ export class FeatureGating {
 
 // Webview-compatible exports (no VS Code dependencies)
 export const isAutopilotComingSoon = (): boolean => FeatureGating.isComingSoon('autopilot');
-
-// Beta code validation
-const _betaKey = atob('VERBRC1CRVRBLTIwMjQ=');
-export const isValidBetaCode = (code: string): boolean => code === _betaKey;

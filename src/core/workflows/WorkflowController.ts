@@ -51,7 +51,6 @@ export class WorkflowController {
         testSettings?: TestSettings;
         cliSettings?: CLISettings;
         urls?: Record<string, string>;
-        autopilotSettings?: { betaCode?: string };
     }> {
         const config = vscode.workspace.getConfiguration('tdad');
         const models = config.get<any[]>('models', []);
@@ -93,11 +92,6 @@ export class WorkflowController {
             permissionFlags: savedFlags ? { ...defaultPermissionFlags, ...savedFlags } : defaultPermissionFlags
         };
 
-        // Autopilot settings (beta code)
-        const autopilotSettings = {
-            betaCode: config.get<string>('betaAccessCode')
-        };
-
         // We cannot read back secrets, only indicate presence
         return {
             models,
@@ -112,8 +106,7 @@ export class WorkflowController {
             projectContext,
             testSettings,
             cliSettings,
-            urls,
-            autopilotSettings
+            urls
         };
     }
 
