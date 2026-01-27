@@ -35,6 +35,7 @@ import { createMessageHandler, CanvasMessageState, CanvasMessageDeps } from './h
 import { SettingsModal } from './SettingsModal';
 import { ProjectWizardModal } from './ProjectWizardModal';
 import { WelcomeOverlay } from './WelcomeOverlay';
+import { FeedbackForm } from './FeedbackForm';
 import { NotificationData } from './CanvasNotification';
 import '../../styles/canvas-app.css';
 import '../../styles/canvas-controls.css';
@@ -78,6 +79,7 @@ const CanvasApp: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'project' | 'testing' | 'autopilot' | 'prompts'>('project');
   const [showWelcomeOverlay, setShowWelcomeOverlay] = useState(true);
+  const [showFeedbackForm, setShowFeedbackForm] = useState(false);
 
   // New modal states for context-aware UI
   const [showBddEditor, setShowBddEditor] = useState(false);
@@ -177,7 +179,8 @@ const CanvasApp: React.FC = () => {
     setAutopilotPendingCount,
     setAutopilotFolderName,
     setAutopilotDialogOpen,
-    setNodeFileStatus
+    setNodeFileStatus,
+    setShowFeedbackForm
   };
 
   const messageDeps: CanvasMessageDeps = {
@@ -923,6 +926,12 @@ const CanvasApp: React.FC = () => {
         onUpdateSettings={setSettingsData}
         postMessage={postMessage}
         initialTab={settingsInitialTab}
+      />
+
+      <FeedbackForm
+        show={showFeedbackForm}
+        onClose={() => setShowFeedbackForm(false)}
+        postMessage={postMessage}
       />
 
       <ProjectWizardModal

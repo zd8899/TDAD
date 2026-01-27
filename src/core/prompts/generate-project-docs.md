@@ -32,6 +32,7 @@ Generate the following 3 files. **Write directly to the target files listed abov
 - **Data Model:** key entities and relationships.
 - **API Structure:** REST/GraphQL endpoints or TRPC routers.
 - **Folder Structure:** Proposed high-level directory layout.
+- **Development Servers:** Specify port numbers for frontend and backend dev servers (choose appropriate defaults for the selected tech stack).
 
 ### 3. `README.md`
 - **Title & Description**

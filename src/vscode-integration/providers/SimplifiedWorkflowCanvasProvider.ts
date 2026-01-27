@@ -465,6 +465,18 @@ export class SimplifiedWorkflowCanvasProvider {
                             await this._settingsHandlers.handleUpdateCLISettings(message.cliSettings);
                             break;
 
+                        case 'submitFeedback':
+                            // Handle feedback submission from webview
+                            const feedbackManager = (global as any).tdadFeedbackManager;
+                            if (feedbackManager) {
+                                await feedbackManager.handleFeedbackSubmission({
+                                    complaint: message.complaint,
+                                    featureRequest: message.featureRequest,
+                                    type: message.type
+                                });
+                            }
+                            break;
+
                         // Navigation handlers (delegated)
                         case 'navigateIntoFolder':
                             await this._navigationHandlers.handleNavigateIntoFolder(message.folderId);

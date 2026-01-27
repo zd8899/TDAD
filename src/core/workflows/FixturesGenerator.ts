@@ -529,6 +529,8 @@ ${isESM ? 'export { test, expect };' : 'module.exports = { test, expect };'}
                           null
                 };
             })
+            // Fallback when no URLs configured - used as placeholder
+            // For generated projects, URLs should be configured via .vscode/settings.json
             : [{ name: 'default', url: 'http://localhost:5173', grep: null }];
 
         const projectsConfig = projects.map(p => {

@@ -57,6 +57,9 @@ export interface CanvasMessageState {
 
     // File status state
     setNodeFileStatus: (fn: any) => void;
+
+    // Feedback form state
+    setShowFeedbackForm: (show: boolean) => void;
 }
 
 export interface CanvasMessageDeps {
@@ -93,6 +96,9 @@ export function createMessageHandler(
                 state.setSettingsData(message.settings || { models: [], secrets: {}, strategy: undefined });
                 state.setSettingsInitialTab('project'); // Default to project tab when opened from global control
                 state.setShowSettings(true);
+                break;
+            case 'showFeedbackForm':
+                state.setShowFeedbackForm(true);
                 break;
             case 'docsFolderSelected':
                 if (message.path) {state.setBlueprintDocsFolder(message.path);}

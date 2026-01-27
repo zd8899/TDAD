@@ -120,6 +120,10 @@
       {
         "command": "tdad.disconnectSlack",
         "title": "TDAD: Disconnect from Slack"
+      },
+      {
+        "command": "tdad.sendFeedback",
+        "title": "TDAD: Send Feedback"
       }
     ],
     "customEditors": [

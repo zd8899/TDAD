@@ -196,6 +196,7 @@ export class TestRunner implements ITestRunner {
             const tdadConfigFile = path.join(workspacePath, '.tdad', 'playwright.config.js');
             if (!fs.existsSync(tdadConfigFile)) {
                 const config = vscode.workspace.getConfiguration('tdad');
+                // Fallback to 5173 only if no URLs configured (for generated projects, .vscode/settings.json should have correct ports)
                 const urls = config.get<Record<string, string>>('test.urls', { ui: 'http://localhost:5173' });
                 scaffoldingService.scaffoldPlaywrightConfig(workspacePath, urls);
                 logDiagnostic(`📝 Created .tdad/playwright.config.js`);

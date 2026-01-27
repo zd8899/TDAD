@@ -9,6 +9,7 @@ import { logExtension, logError, logger } from './shared/utils/Logger';
 import { TDADBootstrap } from './vscode-integration/bootstrap/TDADBootstrap';
 import { SlackService, SlackCommandHandler, SlackCommandDependencies } from './infrastructure/slack';
 import { CLIAgentLauncher } from './vscode-integration/CLIAgentLauncher';
+import { FeedbackManager } from './vscode-integration/providers/handlers/FeedbackManager';
 
 export function activate(context: vscode.ExtensionContext) {
     let workflowController: WorkflowController;
@@ -44,6 +45,33 @@ export function activate(context: vscode.ExtensionContext) {
 
         // MVP: No database initialization needed - using simple JSON storage
         logExtension('MVP: Using simple JSON storage (.tdad/workflows/workflow.json)');
+
+        // Initialize feedback manager for user feedback collection
+        const feedbackManager = new FeedbackManager(context);
+
+        // Set message sender when canvas is available
+        feedbackManager.setMessageSender((message: any) => {
+            SimplifiedWorkflowCanvasProvider.currentPanel?.sendMessage(message);
+        });
+
+        // Store feedbackManager for use in message handlers
+        (global as any).tdadFeedbackManager = feedbackManager;
+
+        feedbackManager.onActivate();
+
+        // Register feedback command
+        const sendFeedbackCommand = vscode.commands.registerCommand('tdad.sendFeedback', async () => {
+            logExtension('tdad.sendFeedback command executed');
+            // Ensure canvas is open first
+            if (!SimplifiedWorkflowCanvasProvider.currentPanel) {
+                SimplifiedWorkflowCanvasProvider.createOrShow(context.extensionUri, context);
+                // Wait a bit for the panel to initialize
+                setTimeout(() => feedbackManager.requestFeedback(), 500);
+            } else {
+                await feedbackManager.requestFeedback();
+            }
+        });
+        context.subscriptions.push(sendFeedbackCommand);
 
         logExtension('TDAD Extension activated successfully');
     } catch (error) {
