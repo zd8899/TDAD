@@ -196,7 +196,7 @@ export class TestWorkflowHandlers {
     // Node Automation Handlers - Delegated to NodeAutomationHandlers
     // ═══════════════════════════════════════════════════════════════════════════
 
-    async handleRunSingleNodeAutomation(nodeId: string, modes: ('bdd' | 'test' | 'run-fix')[] = ['bdd', 'test', 'run-fix']): Promise<void> {
+    async handleRunSingleNodeAutomation(nodeId: string, modes: ('bdd' | 'test' | 'run-fix')[] = ['bdd', 'test', 'run-fix']): Promise<{ started: boolean; error?: string; nodeName?: string }> {
         return this.nodeAutomationHandlers.handleRunSingleNodeAutomation(nodeId, modes);
     }
 
@@ -216,8 +216,8 @@ export class TestWorkflowHandlers {
         return this.nodeAutomationHandlers.handleGetAutopilotInfo(_allFolders);
     }
 
-    async handleRunAllNodesAutomation(confirmed = false, _allFolders = false, modes: ('bdd' | 'test' | 'run-fix')[] = ['bdd', 'test', 'run-fix']): Promise<void> {
-        return this.nodeAutomationHandlers.handleRunAllNodesAutomation(confirmed, _allFolders, modes);
+    async handleRunAllNodesAutomation(confirmed = false, targetFolderId: string | null | undefined = undefined, modes: ('bdd' | 'test' | 'run-fix')[] = ['bdd', 'test', 'run-fix']): Promise<void> {
+        return this.nodeAutomationHandlers.handleRunAllNodesAutomation(confirmed, targetFolderId, modes);
     }
 
     handleStopAllNodesAutomation(): void {

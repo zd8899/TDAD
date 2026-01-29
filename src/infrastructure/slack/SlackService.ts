@@ -4,23 +4,24 @@
  */
 
 import { App, LogLevel } from '@slack/bolt';
-import axios from 'axios';
 import { logger } from '../../shared/utils/Logger';
-import { SlackMessageContext, SlackCommandPayload } from '../../shared/types/slack';
+import { SlackMessageContext } from '../../shared/types/slack';
 
-type SlashCommandCallback = (payload: SlackCommandPayload) => Promise<void>;
 type MessageCallback = (text: string, context: SlackMessageContext) => Promise<void>;
 type ActionCallback = (actionId: string, value: string, context: SlackMessageContext) => Promise<void>;
-type ViewSubmissionCallback = (callbackId: string, values: Record<string, any>, privateMetadata: string, context: SlackMessageContext) => Promise<void>;
-
-export class SlackService {
-    private app: App | null = null;
-    private static instance: SlackService | null = null;
-    private connected: boolean = false;
-    private slashCommandCallback: SlashCommandCallback | null = null;
-    private messageCallback: MessageCallback | null = null;
-    private actionCallback: ActionCallback | null = null;
-    private viewSubmissionCallback: ViewSubmissionCallback | null = null;
+type ViewSubmissionCallback = (callbackId: string, values: Record<string, any>, privateMetadata: string, context: SlackMessageContext) => Promise<any | void>;
+    type SlashCommandCallback = (context: SlackMessageContext) => Promise<{ text: string; blocks: any[] }>;
+    type AppHomeOpenedCallback = (context: SlackMessageContext) => Promise<void>;
+    
+    export class SlackService {
+        private app: App | null = null;
+        private static instance: SlackService | null = null;
+        private connected: boolean = false;
+        private messageCallback: MessageCallback | null = null;
+        private actionCallback: ActionCallback | null = null;
+        private viewSubmissionCallback: ViewSubmissionCallback | null = null;
+        private slashCommandCallback: SlashCommandCallback | null = null;
+        private appHomeOpenedCallback: AppHomeOpenedCallback | null = null;
 
     private constructor() {}
 
@@ -45,61 +46,7 @@ export class SlackService {
                 logLevel: LogLevel.WARN
             });
 
-            // Register slash command handler
-            this.app.command('/tdad', async ({ command, ack, respond, client }) => {
-                await ack();
-
-                const args = command.text.trim().split(/\s+/);
-                const context: SlackMessageContext = {
-                    channelId: command.channel_id,
-                    userId: command.user_id,
-                    responseUrl: command.response_url,
-                    respond: async (message) => {
-                        if (typeof message === 'string') {
-                            await respond({ text: message, response_type: 'ephemeral' });
-                        } else if (message.blocks) {
-                            logger.log('SLACK', `Responding with ${message.blocks.length} blocks`);
-                            logger.log('SLACK', `Blocks JSON: ${JSON.stringify(message.blocks)}`);
-                            try {
-                                await respond({
-                                    text: message.text,
-                                    blocks: message.blocks,
-                                    response_type: 'in_channel'
-                                });
-                            } catch (err: any) {
-                                logger.error('SLACK', `respond() with blocks failed: ${err.message}`);
-                                if (err.response?.data) {
-                                    logger.error('SLACK', `Slack error response: ${JSON.stringify(err.response.data)}`);
-                                }
-                                throw err;
-                            }
-                        } else {
-                            await respond({
-                                text: message.text,
-                                response_type: message.response_type || 'ephemeral'
-                            });
-                        }
-                    }
-                };
-
-                logger.log('SLACK', `Received command: /tdad ${command.text}`);
-
-                if (this.slashCommandCallback) {
-                    try {
-                        await this.slashCommandCallback({
-                            command: args[0] || 'help',
-                            args: args.slice(1),
-                            text: command.text,
-                            context
-                        });
-                    } catch (error) {
-                        logger.error('SLACK', 'Error handling command', error);
-                        await respond(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                    }
-                }
-            });
-
-            // Register message handler for thread replies (for /tdad say)
+            // Register message handler for thread replies
             this.app.message(async ({ message, say }) => {
                 // Only handle messages that mention the bot or are in a thread we're tracking
                 if (this.messageCallback && 'text' in message && message.text) {
@@ -113,6 +60,40 @@ export class SlackService {
                 }
             });
 
+            // Register /tdad slash command - always shows help panel with buttons
+            this.app.command('/tdad', async ({ command, ack, respond }) => {
+                try {
+                    await ack();
+                    logger.log('SLACK', `/tdad command received from ${command.user_name}`);
+
+                    if (this.slashCommandCallback) {
+                        const context: SlackMessageContext = {
+                            channelId: command.channel_id,
+                            userId: command.user_id
+                        };
+
+                        // Use respond() for ephemeral messages instead of waiting for a full return
+                        // This prevents timeout if the handler is slow
+                        const response = await this.slashCommandCallback(context);
+                        
+                        if (response) {
+                            await respond({
+                                text: response.text,
+                                blocks: response.blocks,
+                                response_type: 'in_channel'
+                            });
+                        }
+                    } else {
+                        await respond({
+                            text: 'TDAD is connected but no command handler is configured.',
+                            response_type: 'ephemeral'
+                        });
+                    }
+                } catch (error: any) {
+                    logger.error('SLACK', `/tdad command failed: ${error.message}`, error);
+                }
+            });
+
             // Register action handler for interactive components (buttons, selects)
             this.app.action(/^tdad_.*/, async ({ action, ack, body, respond }) => {
                 await ack();
@@ -123,20 +104,34 @@ export class SlackService {
                         channelId: body.channel?.id || '',
                         userId: body.user?.id || '',
                         triggerId: (body as any).trigger_id, // For opening modals
+                        viewId: (body as any).view?.id, // For updating existing modals
                         respond: async (message) => {
                             logger.log('SLACK', `Action respond called with: ${typeof message === 'string' ? message : JSON.stringify(message)}`);
+
+                            // Check if respond function is available (not available for Home tab actions)
+                            if (typeof respond !== 'function') {
+                                logger.log('SLACK', 'Action respond skipped: no respond function (Home tab action)');
+                                return;
+                            }
+
                             try {
+                                // Detect if this is from Home tab (no channel context)
+                                const isFromHomeTab = !body.channel?.id;
+                                const responseType = isFromHomeTab ? 'ephemeral' : 'in_channel';
+
                                 if (typeof message === 'string') {
-                                    await respond({ text: message, response_type: 'ephemeral' });
+                                    // Text-only responses don't replace (notifications)
+                                    await respond({ text: message, response_type: responseType, replace_original: false });
                                 } else if (message.blocks) {
+                                    // Block responses replace the original (UI navigation)
                                     await respond({
                                         text: message.text,
                                         blocks: message.blocks,
-                                        response_type: 'in_channel',
-                                        replace_original: true
+                                        response_type: responseType,
+                                        replace_original: !isFromHomeTab  // Don't replace Home tab view
                                     });
                                 } else {
-                                    await respond({ text: message.text, response_type: 'ephemeral' });
+                                    await respond({ text: message.text, response_type: responseType, replace_original: false });
                                 }
                             } catch (err: any) {
                                 logger.error('SLACK', `Action respond failed: ${err.message}`);
@@ -161,7 +156,6 @@ export class SlackService {
 
             // Register view submission handler for modals
             this.app.view(/^tdad_.*/, async ({ ack, body, view }) => {
-                await ack();
                 logger.log('SLACK', `View submission: ${view.callback_id}`);
 
                 if (this.viewSubmissionCallback) {
@@ -169,16 +163,59 @@ export class SlackService {
                     // Extract values from view state
                     for (const [blockId, block] of Object.entries(view.state.values)) {
                         for (const [actionId, action] of Object.entries(block)) {
-                            values[actionId] = (action as any).value || (action as any).selected_option?.value;
+                            const actionData = action as any;
+                            // Handle different input types:
+                            // - text inputs: .value
+                            // - single select: .selected_option.value
+                            // - checkboxes/multi-select: .selected_options[].value
+                            if (actionData.selected_options) {
+                                // Checkboxes or multi-select - extract values from array
+                                values[actionId] = actionData.selected_options.map((opt: any) => opt.value);
+                            } else if (actionData.selected_option) {
+                                // Single select
+                                values[actionId] = actionData.selected_option.value;
+                            } else {
+                                // Text input
+                                values[actionId] = actionData.value;
+                            }
                         }
                     }
 
                     const context: SlackMessageContext = {
-                        channelId: '', // Not available in view submission
+                        channelId: '', // Not available in view submission - use private_metadata
                         userId: body.user?.id || ''
                     };
 
-                    await this.viewSubmissionCallback(view.callback_id, values, view.private_metadata || '', context);
+                    // Terminal modal needs to return an updated view to stay open
+                    // For all other modals, ack immediately and process in background
+                    if (view.callback_id === 'tdad_terminal_modal') {
+                        const updatedView = await this.viewSubmissionCallback(view.callback_id, values, view.private_metadata || '', context);
+                        if (updatedView) {
+                            await ack({ response_action: 'update', view: updatedView });
+                        } else {
+                            await ack();
+                        }
+                    } else {
+                        // Ack immediately to avoid Slack timeout (must respond within 3 seconds)
+                        await ack();
+                        // Process callback asynchronously - errors are logged, not thrown
+                        this.viewSubmissionCallback(view.callback_id, values, view.private_metadata || '', context)
+                            .catch(err => logger.error('SLACK', `View submission callback error: ${err.message}`, err));
+                    }
+                } else {
+                    await ack();
+                }
+            });
+
+            // Register App Home Opened event
+            this.app.event('app_home_opened', async ({ event, client, logger: slackLogger }) => {
+                logger.log('SLACK', `App Home Opened by ${event.user}`);
+                if (this.appHomeOpenedCallback) {
+                    const context: SlackMessageContext = {
+                        channelId: '', // Home tab is user-specific, not channel-specific
+                        userId: event.user
+                    };
+                    await this.appHomeOpenedCallback(context);
                 }
             });
 
@@ -205,10 +242,6 @@ export class SlackService {
         return this.connected;
     }
 
-    public onSlashCommand(callback: SlashCommandCallback): void {
-        this.slashCommandCallback = callback;
-    }
-
     public onMessage(callback: MessageCallback): void {
         this.messageCallback = callback;
     }
@@ -219,6 +252,37 @@ export class SlackService {
 
     public onViewSubmission(callback: ViewSubmissionCallback): void {
         this.viewSubmissionCallback = callback;
+    }
+
+    public onSlashCommand(callback: SlashCommandCallback): void {
+        this.slashCommandCallback = callback;
+    }
+
+    public onAppHomeOpened(callback: AppHomeOpenedCallback): void {
+        this.appHomeOpenedCallback = callback;
+    }
+
+    /**
+     * Publish a view to the App Home tab
+     */
+    public async publishHomeView(userId: string, blocks: any[]): Promise<void> {
+        if (!this.app || !this.connected) {
+            logger.log('SLACK', 'Cannot publish home view: not connected');
+            return;
+        }
+
+        try {
+            await this.app.client.views.publish({
+                user_id: userId,
+                view: {
+                    type: 'home',
+                    blocks: blocks
+                }
+            });
+            logger.log('SLACK', `Published Home View for ${userId}`);
+        } catch (error: any) {
+            logger.error('SLACK', `Failed to publish home view: ${error.message}`, error);
+        }
     }
 
     /**
@@ -242,6 +306,44 @@ export class SlackService {
         }
     }
 
+    /**
+     * Update an existing modal (used for refresh within modal)
+     */
+    public async updateModal(viewId: string, view: any): Promise<void> {
+        if (!this.app || !this.connected) {
+            logger.log('SLACK', 'Cannot update modal: not connected');
+            throw new Error('Slack not connected');
+        }
+
+        try {
+            await this.app.client.views.update({
+                view_id: viewId,
+                view
+            });
+            logger.log('SLACK', `Modal updated: ${view.callback_id}`);
+        } catch (error: any) {
+            logger.error('SLACK', `Failed to update modal: ${error.message}`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Check if bot is a member of the given channel
+     */
+    public async isBotInChannel(channelId: string): Promise<boolean> {
+        if (!this.app || !this.connected) {
+            return false;
+        }
+
+        try {
+            const result = await this.app.client.conversations.info({ channel: channelId });
+            return (result.channel as any)?.is_member === true;
+        } catch (error: any) {
+            logger.log('SLACK', `Could not check channel membership: ${error.message}`);
+            return false;
+        }
+    }
+
     public async sendMessage(
         channel: string,
         text: string,
@@ -260,7 +362,13 @@ export class SlackService {
             });
 
             return result.ts;
-        } catch (error) {
+        } catch (error: any) {
+            const errorStr = (error.message || error.code || '').toLowerCase();
+            if (errorStr.includes('not_in_channel') || errorStr.includes('channel_not_found')) {
+                logger.log('SLACK', `Bot not in channel ${channel}. User needs to run: /invite @TDAD`);
+                // Return a special marker so callers can handle this
+                throw new Error('BOT_NOT_IN_CHANNEL');
+            }
             logger.error('SLACK', 'Failed to send message', error);
             throw error;
         }
@@ -319,6 +427,45 @@ export class SlackService {
 
         const formatted = `\`\`\`\n${truncatedOutput}\n\`\`\``;
         await this.sendMessage(channel, formatted, threadTs);
+    }
+
+    /**
+     * Join a channel (works for public channels)
+     * For private channels, user must manually invite the bot
+     */
+    public async joinChannel(channelId: string): Promise<{ success: boolean; message: string }> {
+        if (!this.app || !this.connected) {
+            return { success: false, message: 'Not connected to Slack' };
+        }
+
+        try {
+            await this.app.client.conversations.join({ channel: channelId });
+            logger.log('SLACK', `Joined channel ${channelId}`);
+            return { success: true, message: 'Successfully joined the channel! Notifications will now work.' };
+        } catch (error: any) {
+            const errorMsg = error.message || error.code || JSON.stringify(error) || 'Unknown error';
+            logger.error('SLACK', `Failed to join channel ${channelId}: ${errorMsg}`);
+
+            // Check error message or code for known error types
+            const errorStr = errorMsg.toLowerCase();
+            if (errorStr.includes('missing_scope') || error.code === 'missing_scope') {
+                return {
+                    success: false,
+                    message: 'Please invite the bot manually by typing `/invite @TDAD` in the channel.\n\n_(To enable auto-join, add `channels:join` scope in Slack App settings)_'
+                };
+            }
+            if (errorStr.includes('channel_not_found') || errorStr.includes('is_private')) {
+                return {
+                    success: false,
+                    message: 'This is a private channel. Please invite the bot manually by typing `/invite @TDAD`'
+                };
+            }
+            if (errorStr.includes('already_in_channel')) {
+                return { success: true, message: 'Bot is already in this channel!' };
+            }
+            // Default fallback - always give helpful instructions
+            return { success: false, message: 'Please invite the bot manually by typing `/invite @TDAD` in the channel.' };
+        }
     }
 
     public dispose(): void {

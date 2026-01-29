@@ -413,6 +413,46 @@ export class SimplifiedWorkflowCanvasProvider {
                             vscode.env.openExternal(vscode.Uri.parse('https://github.com/zd8899/TDAD/issues'));
                             break;
 
+                        case 'copyToClipboard':
+                            logCanvas('Copying to clipboard');
+                            await vscode.env.clipboard.writeText(message.text);
+                            break;
+
+                        case 'openUrl':
+                            logCanvas(`Opening URL: ${message.url}`);
+                            await vscode.env.openExternal(vscode.Uri.parse(message.url));
+                            break;
+
+                        case 'saveSlackTokens':
+                            logCanvas('Received saveSlackTokens message');
+                            try {
+                                // Store tokens securely using Secrets API
+                                await this._context.secrets.store('tdad.slack.botToken', message.botToken);
+                                await this._context.secrets.store('tdad.slack.appToken', message.appToken);
+
+                                // Enable Slack integration in configuration
+                                const config = vscode.workspace.getConfiguration('tdad');
+                                await config.update('slack.enabled', true, vscode.ConfigurationTarget.Global);
+
+                                const reloadChoice = await vscode.window.showInformationMessage(
+                                    'Slack tokens saved securely! VS Code needs to reload to activate the connection.',
+                                    { modal: true },
+                                    'Reload Now',
+                                    'Reload Later'
+                                );
+
+                                if (reloadChoice === 'Reload Now') {
+                                    await vscode.commands.executeCommand('workbench.action.reloadWindow');
+                                }
+                            } catch (error: any) {
+                                vscode.window.showErrorMessage(`Failed to save tokens: ${error.message}`);
+                            }
+                            break;
+
+                        case 'showMessage':
+                            vscode.window.showInformationMessage(message.text);
+                            break;
+
                         case 'openPromptTemplate':
                             logCanvas(`Received openPromptTemplate message: ${JSON.stringify(message)}`);
                             await this._promptHandlers.handleOpenPromptTemplate(message.templateName);
@@ -496,7 +536,10 @@ export class SimplifiedWorkflowCanvasProvider {
                             break;
 
                         case 'stopAutomation':
+                            // Stop all automation types
                             this._automationHandlers.handleStopAutomation();
+                            this._testWorkflowHandlers.handleStopSingleNodeAutomation();
+                            this._testWorkflowHandlers.handleStopAllNodesAutomation();
                             break;
 
                         case 'agentDone':
@@ -539,9 +582,10 @@ export class SimplifiedWorkflowCanvasProvider {
 
                         case 'runAllNodesAutomation':
                             logCanvas('Received runAllNodesAutomation message');
+                            // allFolders=true means run all nodes (pass null), allFolders=false means use current folder (pass undefined)
                             await this._testWorkflowHandlers.handleRunAllNodesAutomation(
                                 message.confirmed === true,
-                                message.allFolders === true,
+                                message.allFolders === true ? null : undefined,
                                 message.modes || ['bdd', 'test', 'run-fix']
                             );
                             break;
@@ -663,13 +707,43 @@ export class SimplifiedWorkflowCanvasProvider {
 <body>
     <div id="root"></div>
     <div id="portal-root"></div>
-    <script src="${scriptUri}"></script>
+    <script type="module" src="${scriptUri}"></script>
 </body>
 </html>`;
     }
 
     public sendMessage(message: any) {
         this._panel.webview.postMessage(message);
+    }
+
+    /**
+     * Run single node automation directly (called from Slack integration)
+     * Returns result for Slack notification support
+     */
+    public async runSingleNodeAutomation(nodeId: string, modes: ('bdd' | 'test' | 'run-fix')[]): Promise<{ started: boolean; error?: string; nodeName?: string }> {
+        logCanvas(`runSingleNodeAutomation (direct call) - nodeId: ${nodeId}, modes: [${modes.join(', ')}]`);
+        return await this._testWorkflowHandlers.handleRunSingleNodeAutomation(nodeId, modes);
+    }
+
+    /**
+     * Run all nodes automation directly (called from Slack integration)
+     * @param folderId The folder ID to run nodes from (null = all nodes at root)
+     * @param modes The automation modes to run
+     */
+    public async runAllNodesAutomation(folderId: string | null, modes: ('bdd' | 'test' | 'run-fix')[]): Promise<void> {
+        logCanvas(`runAllNodesAutomation (direct call) - folderId: ${folderId ?? 'all'}, modes: [${modes.join(', ')}]`);
+        await this._testWorkflowHandlers.handleRunAllNodesAutomation(true, folderId, modes);
+    }
+
+    /**
+     * Stop all automation directly (called from Slack integration)
+     * Centralized stop that handles all automation types
+     */
+    public stopAllAutomation(): void {
+        logCanvas('stopAllAutomation (direct call)');
+        this._automationHandlers.handleStopAutomation();
+        this._testWorkflowHandlers.handleStopSingleNodeAutomation();
+        this._testWorkflowHandlers.handleStopAllNodesAutomation();
     }
 
     /**
@@ -704,13 +778,19 @@ export class SimplifiedWorkflowCanvasProvider {
      */
     public addNodeFromSlack(nodeData: any) {
         if (this._nodeManager) {
+            if (nodeData.nodeType === 'folder') {
+                // Use addFolderFromSlack for folder nodes
+                this.addFolderFromSlack(nodeData);
+                return;
+            }
+
             const node = {
                 id: nodeData.id || `node-${Date.now()}`,
-                workflowId: nodeData.workflowId || 'default',
                 nodeType: nodeData.nodeType || 'file',
                 title: nodeData.title || 'Untitled',
                 description: nodeData.description || '',
                 position: nodeData.position || { x: 100, y: 100 },
+                parentId: nodeData.parentId,
                 preConditions: [],
                 features: [],
                 testData: {},
@@ -719,6 +799,21 @@ export class SimplifiedWorkflowCanvasProvider {
                 status: 'pending'
             };
             this._nodeManager.addNode(node as any);
+            this._loadCanvas(); // Refresh canvas
+        }
+    }
+
+    /**
+     * Add a folder from Slack command with proper parentId handling
+     */
+    public addFolderFromSlack(folderData: any) {
+        if (this._nodeManager) {
+            this._nodeManager.addFolder({
+                id: folderData.id,
+                title: folderData.title,
+                description: folderData.description,
+                position: folderData.position || { x: 100, y: 100 }
+            }, folderData.parentId);
             this._loadCanvas(); // Refresh canvas
         }
     }

@@ -27,10 +27,17 @@ export class SimpleNodeManager {
     }
 
     /**
-     * Get a node by ID from current context
+     * Get a node by ID - first checks current context, then falls back to all nodes
      */
     public getNodeById(nodeId: string): Node | undefined {
-        return this._nodes.find(n => n.id === nodeId);
+        // First try current context
+        const node = this._nodes.find(n => n.id === nodeId);
+        if (node) {
+            return node;
+        }
+        // Fall back to searching all nodes (for Slack/external triggers)
+        const allNodes = this.storage.loadAll();
+        return allNodes.find(n => n.id === nodeId);
     }
 
     /**
@@ -114,28 +121,46 @@ export class SimpleNodeManager {
     }
 
     public addNode(node: Node): void {
-        // Set parentId and workflowId to current folder
-        if (this._currentFolderId) {
-            if (!node.parentId) {
-                node.parentId = this._currentFolderId;
-            }
-            // Set workflowId based on parent folder's folderPath
-            if (!node.workflowId) {
-                const parentFolder = this.findParentFolder(this._currentFolderId);
-                if (!parentFolder) {
-                    logError('NODE_ADD', `Parent folder not found: ${this._currentFolderId}`);
-                    return;
-                }
-                const parentPath = (parentFolder as FolderNode).folderPath;
-                if (!parentPath) {
-                    logError('NODE_ADD', `Parent folder has no folderPath: ${this._currentFolderId}`);
-                    return;
-                }
-                node.workflowId = `${parentPath}-workflow`;
-            }
+        // Set parentId to current folder if not already set
+        if (this._currentFolderId && !node.parentId) {
+            node.parentId = this._currentFolderId;
         }
-        this._nodes.push(node);
-        this.saveDebounced();
+
+        // Set workflowId based on parent folder's folderPath (use node.parentId or _currentFolderId)
+        const effectiveParentId = node.parentId || this._currentFolderId;
+        if (effectiveParentId && !node.workflowId) {
+            const parentFolder = this.findParentFolder(effectiveParentId);
+            if (!parentFolder) {
+                logError('NODE_ADD', `Parent folder not found: ${effectiveParentId}`);
+                return;
+            }
+            const parentPath = (parentFolder as FolderNode).folderPath;
+            if (!parentPath) {
+                logError('NODE_ADD', `Parent folder has no folderPath: ${effectiveParentId}`);
+                return;
+            }
+            node.workflowId = parentPath;
+        }
+
+        // Default to 'default' workflowId if still not set (root level)
+        if (!node.workflowId) {
+            node.workflowId = 'default';
+        }
+
+        // Check if node belongs to current folder context or a different folder
+        const nodeParentId = node.parentId || null;
+        const currentFolderId = this._currentFolderId || null;
+
+        if (nodeParentId !== currentFolderId) {
+            // Node belongs to a different folder - save directly to correct workflow file
+            logCanvas(`addNode: Node ${node.id} belongs to folder ${nodeParentId || 'root'}, current folder is ${currentFolderId || 'root'} - using storage.addNodeToWorkflow`);
+            this.storage.addNodeToWorkflow(node);
+        } else {
+            // Node belongs to current folder - add to memory and save
+            this._nodes.push(node);
+            this.saveDebounced();
+        }
+
         this.notifyNodeAdded(node);
     }
 
@@ -156,29 +181,43 @@ export class SimpleNodeManager {
     /**
      * Add a folder node that users can navigate into
      * The workflowId includes the full parent path (e.g., "auth/test-workflow" for "test" folder inside "auth")
+     * @param folderData - Folder data including optional parentId
+     * @param explicitParentId - Optional explicit parentId (for Slack integration), overrides _currentFolderId
      */
-    public addFolder(folderData: Partial<FolderNode>): void {
+    public addFolder(folderData: Partial<FolderNode>, explicitParentId?: string): void {
         const folderName = (folderData.title || 'new-folder').toLowerCase().replace(/[\s/\\]+/g, '-');
+
+        // Use explicit parentId if provided, otherwise fall back to current folder
+        const effectiveParentId = explicitParentId || folderData.parentId || this._currentFolderId;
 
         // Build the full path from parent folder's folderPath
         let fullPath = folderName;
-        if (this._currentFolderId) {
-            const parentFolder = this.findParentFolder(this._currentFolderId);
+        if (effectiveParentId) {
+            const parentFolder = this.findParentFolder(effectiveParentId);
             if (!parentFolder) {
-                logError('FOLDER_ADD', `Parent folder not found: ${this._currentFolderId}`);
+                logError('FOLDER_ADD', `Parent folder not found: ${effectiveParentId}`);
                 return;
             }
             const parentPath = (parentFolder as FolderNode).folderPath;
             if (!parentPath) {
-                logError('FOLDER_ADD', `Parent folder has no folderPath: ${this._currentFolderId}`);
+                logError('FOLDER_ADD', `Parent folder has no folderPath: ${effectiveParentId}`);
                 return;
             }
             fullPath = `${parentPath}/${folderName}`;
         }
 
+        // Determine workflowId based on parent (where this folder will be saved)
+        let folderWorkflowId = 'default';
+        if (effectiveParentId) {
+            const parentFolder = this.findParentFolder(effectiveParentId);
+            if (parentFolder && (parentFolder as FolderNode).folderPath) {
+                folderWorkflowId = (parentFolder as FolderNode).folderPath;
+            }
+        }
+
         const folder: FolderNode = {
             id: folderData.id || `folder-${Date.now()}`,
-            workflowId: `${fullPath}-workflow`,
+            workflowId: folderWorkflowId,
             nodeType: 'folder',
             title: folderData.title || 'New Folder',
             description: folderData.description || '',
@@ -186,24 +225,43 @@ export class SimpleNodeManager {
             children: [],
             position: folderData.position || { x: 50, y: 50 },
             status: 'pending',
-            parentId: this._currentFolderId || undefined,
+            parentId: effectiveParentId || undefined,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
         };
 
-        this._nodes.push(folder);
-        this.saveDebounced();
-        this.notifyNodeAdded(folder);
+        // Check if folder belongs to current folder context or a different folder
+        const currentFolderId = this._currentFolderId || null;
 
+        if (effectiveParentId !== currentFolderId) {
+            // Folder belongs to a different parent - save directly to correct workflow file
+            logCanvas(`addFolder: Folder ${folder.id} belongs to ${effectiveParentId || 'root'}, current folder is ${currentFolderId || 'root'} - using storage.addNodeToWorkflow`);
+            this.storage.addNodeToWorkflow(folder as unknown as Node);
+        } else {
+            // Folder belongs to current context - add to memory and save
+            this._nodes.push(folder);
+            this.saveDebounced();
+        }
+
+        this.notifyNodeAdded(folder);
         logCanvas(`Created folder: ${folder.title} (${folder.id}) with path: ${fullPath}`);
     }
 
     public updateNode(updatedNode: Node): void {
         const index = this._nodes.findIndex(n => n.id === updatedNode.id);
         if (index >= 0) {
+            // Node is in current folder context - update in memory and save
             this._nodes[index] = updatedNode;
             this.saveDebounced();
             this.notifyNodeUpdated(updatedNode);
+        } else {
+            // Node is NOT in current context (e.g., Slack trigger for different workflow)
+            // Update directly in the correct workflow file
+            logCanvas(`updateNode: Node ${updatedNode.id} not in current context, using storage.updateNodeById`);
+            const success = this.storage.updateNodeById(updatedNode);
+            if (success) {
+                this.notifyNodeUpdated(updatedNode);
+            }
         }
     }
 

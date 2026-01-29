@@ -43,7 +43,7 @@ export async function handleNodeCommand(
     ctx: NodeHandlerContext
 ): Promise<void> {
     if (args.length === 0) {
-        await ctx.reply(context, '❌ Usage: `/tdad node <name>` or `/tdad node <name> desc|bdd|tests`');
+        await ctx.reply(context, '❌ Usage: `/tdad node <name>` or `/tdad node <name> desc|plan|tests`');
         return;
     }
 
@@ -77,9 +77,9 @@ export async function handleNodeCommand(
         const nodeName = args[0];
         const newDesc = args.slice(2).join(' ');
         await handleDescriptionCommand(nodeName, newDesc, context, ctx);
-    } else if (secondArg === 'bdd') {
+    } else if (secondArg === 'plan') {
         const nodeName = args[0];
-        await handleBddCommand(nodeName, context, ctx);
+        await handlePlanCommand(nodeName, context, ctx);
     } else if (secondArg === 'tests') {
         const nodeName = args[0];
         await handleTestStatusCommand(nodeName, context, ctx);
@@ -103,20 +103,23 @@ async function handleNodeDetailsCommand(
         return;
     }
 
-    const statusEmoji = (node as any).status === 'passed' ? '✅' :
-                       (node as any).status === 'failed' ? '❌' : '⚪';
+    const statusEmoji = node.status === 'passed' ? '✅' :
+                       node.status === 'failed' ? '❌' : '⚪';
 
-    let message = `📦 *${node.title}* ${statusEmoji}\n`;
-    message += `\n📝 *Description:* ${node.description || '_No description_'}\n`;
-    message += `\n🆔 *ID:* \`${node.id}\``;
+    // Check if plan exists via getPlanSpec (handles both planFile property and default path)
+    const planSpec = await ctx.deps.getPlanSpec(node.id);
+    const hasPlan = !!planSpec;
 
-    const hasBdd = (node as any).bddSpecFile;
-    message += `\n📋 *BDD:* ${hasBdd ? 'Yes' : 'No'}`;
+    let message = `*${node.title}* ${statusEmoji}\n`;
+    message += `\n${node.description || '_No description_'}\n`;
+    message += `\nID: \`${node.id}\``;
 
-    const hasTests = (node as any).testCodeFile;
-    message += `\n🧪 *Tests:* ${hasTests ? 'Yes' : 'No'}`;
+    message += `\nPlan: ${hasPlan ? 'Yes' : 'No'}`;
 
-    message += `\n\n_Use \`/tdad node ${node.title} desc|bdd|tests\` to view/edit_`;
+    const hasTests = node.testCodeFile;
+    message += `  |  Tests: ${hasTests ? 'Yes' : 'No'}`;
+
+    message += `\n\n_Use \`/tdad node ${node.title} desc|plan|tests\` to view/edit_`;
 
     await ctx.reply(context, message);
 }
@@ -137,7 +140,7 @@ async function handleDescriptionCommand(
     }
 
     if (!newDesc) {
-        await ctx.reply(context, `📝 *${node.title}* description:\n\n${node.description || '_No description_'}`);
+        await ctx.reply(context, `*${node.title}* description:\n\n${node.description || '_No description_'}`);
         return;
     }
 
@@ -148,9 +151,9 @@ async function handleDescriptionCommand(
 }
 
 /**
- * Show BDD spec inline
+ * Show Plan inline
  */
-async function handleBddCommand(
+async function handlePlanCommand(
     nodeName: string,
     context: SlackMessageContext,
     ctx: NodeHandlerContext
@@ -161,13 +164,13 @@ async function handleBddCommand(
         return;
     }
 
-    const currentBdd = await ctx.deps.getBddSpec(node.id);
+    const currentPlan = await ctx.deps.getPlanSpec(node.id);
 
-    if (currentBdd) {
-        const truncated = currentBdd.length > 2500 ? currentBdd.substring(0, 2500) + '\n...(truncated)' : currentBdd;
-        await ctx.reply(context, `📋 *BDD Spec for ${node.title}*\n\`\`\`gherkin\n${truncated}\n\`\`\`\n\n_Use the UI to edit: \`/tdad nodes\` → select node → Edit BDD_`);
+    if (currentPlan) {
+        const truncated = currentPlan.length > 2500 ? currentPlan.substring(0, 2500) + '\n...(truncated)' : currentPlan;
+        await ctx.reply(context, `*Plan for ${node.title}*\n\`\`\`gherkin\n${truncated}\n\`\`\`\n\n_Use the UI to edit: \`/tdad nodes\` → select node → Edit Plan_`);
     } else {
-        await ctx.reply(context, `📋 *BDD Spec for ${node.title}*\n_No BDD spec yet._\n\n_Use the UI to create: \`/tdad nodes\` → select node → Edit BDD_`);
+        await ctx.reply(context, `*Plan for ${node.title}*\n_No plan yet._\n\n_Use the UI to create: \`/tdad nodes\` → select node → Edit Plan_`);
     }
 }
 
@@ -185,24 +188,24 @@ async function handleTestStatusCommand(
         return;
     }
 
-    const statusEmoji = (node as any).status === 'passed' ? '✅' :
-                       (node as any).status === 'failed' ? '❌' : '⚪';
+    const statusEmoji = node.status === 'passed' ? '✅' :
+                       node.status === 'failed' ? '❌' : '⚪';
 
-    let message = `🧪 *Tests for ${node.title}* ${statusEmoji}\n`;
+    let message = `*Tests for ${node.title}* ${statusEmoji}\n`;
 
-    const hasTests = (node as any).testCodeFile;
+    const hasTests = node.testCodeFile;
     if (!hasTests) {
         message += '\n_No test file generated yet._';
         message += '\n\nUse `/tdad run ' + node.title + '` to generate tests.';
     } else {
-        message += `\n📁 Test file: \`${(node as any).testCodeFile}\``;
-        message += `\n📊 Status: ${(node as any).status || 'not_tested'}`;
+        message += `\nTest file: \`${node.testCodeFile}\``;
+        message += `\nStatus: ${node.status || 'not_tested'}`;
 
-        const lastResults = (node as any).lastTestResults;
+        const lastResults = node.lastTestResults;
         if (lastResults && Array.isArray(lastResults)) {
             const passed = lastResults.filter((r: any) => r.passed).length;
             const total = lastResults.length;
-            message += `\n✅ Passed: ${passed}/${total}`;
+            message += `\nPassed: ${passed}/${total}`;
         }
     }
 
@@ -230,6 +233,6 @@ export async function handleTestCommand(
         return;
     }
 
-    await ctx.reply(context, `🧪 Running tests for: *${node.title}*...`);
+    await ctx.reply(context, `Running tests for: *${node.title}*...`);
     await ctx.deps.runNodeTests(node.id);
 }

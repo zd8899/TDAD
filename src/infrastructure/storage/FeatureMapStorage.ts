@@ -264,6 +264,55 @@ export class FeatureMapStorage {
     }
 
     /**
+     * Add a new node to the correct workflow file based on its parentId
+     * Works regardless of current folder context (for Slack/external triggers)
+     * @param newNode - Node to add
+     */
+    public addNodeToWorkflow(newNode: Node): void {
+        // Determine which workflow file this node belongs to based on its parentId
+        const parentId = newNode.parentId || null;
+
+        // Load nodes and edges from the correct workflow
+        const data = this.load(parentId, true);
+
+        // Add the new node
+        data.nodes.push(newNode);
+
+        // Save back to the correct workflow file
+        this.save(data.nodes, data.edges, parentId);
+        logCanvas(`addNodeToWorkflow: Added node ${newNode.id} (${newNode.title}) to workflow ${parentId || 'root'}`);
+    }
+
+    /**
+     * Update a single node in its correct workflow file
+     * Works regardless of current folder context (for Slack/external triggers)
+     * @param updatedNode - Node with updated data
+     * @returns true if node was found and updated, false otherwise
+     */
+    public updateNodeById(updatedNode: Node): boolean {
+        // Determine which workflow file this node belongs to based on its parentId
+        const parentId = updatedNode.parentId || null;
+
+        // Load nodes and edges from the correct workflow
+        const data = this.load(parentId, true);
+        const nodeIndex = data.nodes.findIndex(n => n.id === updatedNode.id);
+
+        if (nodeIndex === -1) {
+            logError('STORAGE', `updateNodeById: Node ${updatedNode.id} not found in workflow ${parentId || 'root'}`);
+            return false;
+        }
+
+        // Update the node
+        data.nodes[nodeIndex] = updatedNode;
+
+        // Save back to the correct workflow file
+        this.save(data.nodes, data.edges, parentId);
+        logCanvas(`updateNodeById: Updated node ${updatedNode.id} (${updatedNode.title}) in workflow ${parentId || 'root'}`);
+
+        return true;
+    }
+
+    /**
      * Load all edges from all folders recursively
      * @returns All edges across all folders
      */

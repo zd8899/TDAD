@@ -38,6 +38,12 @@ export interface BaseNode {
     testLayers?: ('ui' | 'api')[]; // Node-level override: which test layers to generate (default: use global settings)
     createdAt?: string;
     updatedAt?: string;
+
+    // Runtime properties (populated during automation)
+    testCodeFile?: string; // Path to generated test file
+    planFile?: string; // Path to BDD plan/spec file
+    lastTestResults?: TestResult[]; // Results from last test run
+    sourceFile?: string; // Path to generated source/action file
 }
 
 // Folder Node - represents an actual directory

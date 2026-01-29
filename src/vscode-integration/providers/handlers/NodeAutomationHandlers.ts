@@ -129,24 +129,29 @@ export class NodeAutomationHandlers {
 
     /**
      * Start single-node automation for the selected node
+     * Returns result object for Slack notification support
      */
-    async handleRunSingleNodeAutomation(nodeId: string, modes: ('bdd' | 'test' | 'run-fix')[] = ['bdd', 'test', 'run-fix']): Promise<void> {
+    async handleRunSingleNodeAutomation(nodeId: string, modes: ('bdd' | 'test' | 'run-fix')[] = ['bdd', 'test', 'run-fix']): Promise<{ started: boolean; error?: string; nodeName?: string }> {
         try {
             logCanvas(`Starting single-node automation for: ${nodeId} (modes: ${modes.join(', ')})`);
 
             const node = this.nodeManager.getNodeById(nodeId);
             if (!node) {
+                logCanvas(`[WARN] Node not found: ${nodeId}`);
                 vscode.window.showWarningMessage('Node not found');
-                return;
+                return { started: false, error: 'Node not found' };
             }
+            logCanvas(`Found node: ${node.title} (${node.id})`);
 
             if (this.singleNodeOrchestrator?.isRunning()) {
+                logCanvas(`[WARN] Orchestrator already running - blocking new automation`);
                 vscode.window.showWarningMessage('Single-node automation is already running. Stop it first.');
-                return;
+                return { started: false, error: 'Automation already running. Stop it first or wait for completion.', nodeName: node.title };
             }
 
             const workspaceRoot = this.storage.getWorkspaceRoot();
             const extensionPath = vscode.extensions.getExtension('tdad.tdad')?.extensionPath || this.context.extensionPath;
+            logCanvas(`Creating orchestrator: workspace=${workspaceRoot}`);
 
             this.singleNodeOrchestrator = new SingleNodeOrchestrator(workspaceRoot, extensionPath);
 
@@ -249,9 +254,12 @@ export class NodeAutomationHandlers {
             const modeLabels = modes.map(m => m === 'bdd' ? 'Plan' : m === 'test' ? 'Test' : 'Run+Fix').join(' → ');
             vscode.window.showInformationMessage(`🚀 Started automation (${modeLabels}) for "${node.title}"`);
 
+            return { started: true, nodeName: node.title };
+
         } catch (error) {
             logError('CANVAS', 'Failed to start single-node automation', error);
             vscode.window.showErrorMessage(`Failed to start automation: ${error}`);
+            return { started: false, error: `Failed to start: ${error}` };
         }
     }
 
@@ -259,6 +267,12 @@ export class NodeAutomationHandlers {
      * Stop single-node automation
      */
     handleStopSingleNodeAutomation(): void {
+        // Kill CLI terminal first
+        const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (workspacePath) {
+            CLIAgentLauncher.getInstance(workspacePath).killTerminal();
+        }
+
         if (this.singleNodeOrchestrator?.isRunning()) {
             this.singleNodeOrchestrator.stop();
             vscode.window.showInformationMessage('🛑 Single-node automation stopped');
@@ -330,10 +344,13 @@ export class NodeAutomationHandlers {
 
     /**
      * Run automation for all nodes
+     * @param confirmed Whether the user has confirmed the action
+     * @param targetFolderId Optional folder ID to run nodes from (if null/undefined, uses current folder or all nodes)
+     * @param modes The automation modes to run
      */
-    async handleRunAllNodesAutomation(confirmed = false, _allFolders = false, modes: ('bdd' | 'test' | 'run-fix')[] = ['bdd', 'test', 'run-fix']): Promise<void> {
+    async handleRunAllNodesAutomation(confirmed = false, targetFolderId: string | null | undefined = undefined, modes: ('bdd' | 'test' | 'run-fix')[] = ['bdd', 'test', 'run-fix']): Promise<void> {
         try {
-            logCanvas(`Starting run-all-nodes automation (modes: ${modes.join(', ')})`);
+            logCanvas(`Starting run-all-nodes automation (modes: ${modes.join(', ')}, targetFolderId: ${targetFolderId ?? 'none'})`);
 
             const cancelAutomation = (message: string) => {
                 logCanvas(`Cancelling automation: ${message}`);
@@ -352,15 +369,16 @@ export class NodeAutomationHandlers {
             }
 
             const allNodes = this.nodeManager.getAllNodes();
-            const currentFolderId = this.nodeManager.getCurrentFolder();
+            // Use targetFolderId if provided (from Slack), otherwise fall back to current canvas folder
+            const folderId = targetFolderId !== undefined ? targetFolderId : this.nodeManager.getCurrentFolder();
 
             let featureNodes: Node[];
-            if (currentFolderId) {
-                const descendantIds = this.getDescendantNodeIds(currentFolderId, allNodes);
+            if (folderId) {
+                const descendantIds = this.getDescendantNodeIds(folderId, allNodes);
                 featureNodes = allNodes.filter(n =>
                     n.nodeType !== 'folder' && descendantIds.has(n.id)
                 );
-                logCanvas(`Inside folder, found ${featureNodes.length} descendant feature nodes`);
+                logCanvas(`Running folder ${folderId}, found ${featureNodes.length} descendant feature nodes`);
             } else {
                 featureNodes = allNodes.filter(n => n.nodeType !== 'folder');
                 logCanvas(`At root, found ${featureNodes.length} feature nodes`);
@@ -576,6 +594,12 @@ export class NodeAutomationHandlers {
      * Stop all-nodes automation
      */
     handleStopAllNodesAutomation(): void {
+        // Kill CLI terminal first
+        const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (workspacePath) {
+            CLIAgentLauncher.getInstance(workspacePath).killTerminal();
+        }
+
         if (this.singleNodeOrchestrator?.isRunning()) {
             this.singleNodeOrchestrator.stop();
             vscode.window.showInformationMessage('🛑 All-nodes automation stopped');

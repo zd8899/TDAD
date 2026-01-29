@@ -115,7 +115,7 @@
       },
       {
         "command": "tdad.connectSlack",
-        "title": "TDAD: Connect to Slack"
+        "title": "TDAD: Connect to Slack (Manual)"
       },
       {
         "command": "tdad.disconnectSlack",
@@ -312,6 +312,11 @@
           "type": "string",
           "default": "",
           "description": "Default Slack channel ID for notifications (e.g., C01234567)"
+        },
+        "tdad.slack.userId": {
+          "type": "string",
+          "default": "",
+          "description": "[Optional] Your Slack User ID. Not required if you created your own personal Slack App."
         }
       }
     }

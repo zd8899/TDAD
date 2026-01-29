@@ -122,9 +122,22 @@ const CanvasControls: React.FC<CanvasControlsProps> = ({
         <button
           onClick={onOpenSettings}
           className="canvas-controls__btn canvas-controls__btn--icon-only"
-          title="Settings"
+          title="Settings (NEW: Slack Integration)"
+          style={{ position: 'relative' }}
         >
           <span className="canvas-controls__icon">⚙</span>
+          <span style={{
+            position: 'absolute',
+            top: '-2px',
+            right: '-2px',
+            background: '#ff4444',
+            color: 'white',
+            fontSize: '7px',
+            fontWeight: 'bold',
+            padding: '1px 3px',
+            borderRadius: '6px',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.3)'
+          }}>NEW</span>
         </button>
 
         <button

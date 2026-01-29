@@ -8,6 +8,14 @@ export interface SlackSettings {
     defaultChannel: string;
 }
 
+/**
+ * Home Tab view state - tracks what each user is currently viewing
+ */
+export type HomeTabView =
+    | { type: 'dashboard' }
+    | { type: 'folder'; folderId: string | null } // null = root
+    | { type: 'node'; nodeId: string };
+
 export interface SlackRespondOptions {
     text: string;
     blocks?: any[];
@@ -20,6 +28,7 @@ export interface SlackMessageContext {
     userId: string;
     responseUrl?: string;
     triggerId?: string; // For opening modals
+    viewId?: string; // For updating existing modals
     respond?: (message: string | SlackRespondOptions) => Promise<void>;
 }
 
@@ -78,14 +87,21 @@ export interface SlackCommandDependencies {
     updateNode: (node: import('./index').Node) => void;
     getNodeById: (nodeId: string) => import('./index').Node | undefined;
 
-    // BDD/Test management
-    getBddSpec: (nodeId: string) => Promise<string | null>;
-    saveBddSpec: (nodeId: string, spec: string) => Promise<void>;
+    // Plan/Test management
+    getPlanSpec: (nodeId: string) => Promise<string | null>;
+    savePlanSpec: (nodeId: string, spec: string) => Promise<void>;
 
     // Automation
-    runSingleNode: (nodeId: string, modes: string[]) => Promise<void>;
-    runFolderNodes: (folderId: string | null) => Promise<void>;
+    runSingleNode: (nodeId: string, modes: string[]) => Promise<{ started: boolean; error?: string; nodeName?: string }>;
+    runFolderNodes: (folderId: string | null, modes?: ('bdd' | 'test' | 'run-fix')[]) => Promise<void>;
 
     // CLI
     getCliOutput: (lines: number) => string;
+    captureCliOutput: () => Promise<string | null>;
+    killCliTerminal: () => boolean;
+    clearAutomationState: () => void;
+
+    // Channel management (for Home Tab fallback)
+    getDefaultChannelId?: () => string | undefined;
+    setDefaultChannelId?: (channelId: string) => void;
 }

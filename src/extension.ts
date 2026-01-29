@@ -7,9 +7,8 @@ import { WorkflowController } from './core/workflows/WorkflowController'; // MVP
 import { TestRunner } from './vscode-integration/testing/TestRunner';
 import { logExtension, logError, logger } from './shared/utils/Logger';
 import { TDADBootstrap } from './vscode-integration/bootstrap/TDADBootstrap';
-import { SlackService, SlackCommandHandler, SlackCommandDependencies } from './infrastructure/slack';
-import { CLIAgentLauncher } from './vscode-integration/CLIAgentLauncher';
 import { FeedbackManager } from './vscode-integration/providers/handlers/FeedbackManager';
+import { SlackState, connectSlack, disconnectSlack, autoConnectSlack } from './vscode-integration/SlackInitializer';
 
 export function activate(context: vscode.ExtensionContext) {
     let workflowController: WorkflowController;
@@ -618,35 +617,28 @@ export function activate(context: vscode.ExtensionContext) {
     });
 
     // Sprint 15: Slack Remote Control Integration
-    let slackService: SlackService | null = null;
-    let slackCommandHandler: SlackCommandHandler | null = null;
+    const slackState: SlackState = { service: null, commandHandler: null };
 
     const connectSlackCommand = vscode.commands.registerCommand('tdad.connectSlack', async () => {
         logExtension('connectSlack command executed');
 
         try {
             const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-            logExtension(`connectSlack: workspaceFolder = ${workspaceFolder?.uri.fsPath || 'null'}`);
-
             if (!workspaceFolder) {
                 vscode.window.showErrorMessage('No workspace folder found');
                 return;
             }
 
-            logExtension('connectSlack: About to show modal dialog');
-
-            // Show instructions first - use modal so it's impossible to miss
+            // Show instructions first
             const ready = await vscode.window.showInformationMessage(
                 'You will need both tokens ready:\n• Bot Token (xoxb-...)\n• App Token (xapp-...)\n\nCopy them from api.slack.com/apps before continuing.',
                 { modal: true },
                 'I have both tokens',
                 'Cancel'
             );
-
-            logExtension(`connectSlack: User response = ${ready}`);
             if (ready !== 'I have both tokens') { return; }
 
-            // Get tokens from user - ignoreFocusOut keeps the box open when switching tabs
+            // Get tokens from user
             const botToken = await vscode.window.showInputBox({
                 prompt: 'Enter Slack Bot Token (xoxb-...)',
                 password: true,
@@ -667,190 +659,8 @@ export function activate(context: vscode.ExtensionContext) {
             await context.secrets.store('tdad.slack.botToken', botToken);
             await context.secrets.store('tdad.slack.appToken', appToken);
 
-            logExtension('connectSlack: Tokens stored, initializing Slack service');
-
-            // Initialize Slack service
-            slackService = SlackService.getInstance();
-            await slackService.connect(botToken, appToken);
-
-            logExtension('connectSlack: Slack service connected');
-
-            // Enable Slack output capture in CLI launcher
-            const cliLauncher = CLIAgentLauncher.getInstance(workspaceFolder.uri.fsPath);
-            cliLauncher.setSlackOutputEnabled(true);
-
-            // Set up command handler with dependencies
-            // Import FeatureMapStorage for direct disk access (doesn't require webview to be open)
-            const { FeatureMapStorage: SlackFeatureMapStorage } = await import('./infrastructure/storage/FeatureMapStorage');
-            const { getFeatureFilePath } = await import('./shared/utils/nodePathUtils');
-            const fs = await import('fs');
-            const pathModule = await import('path');
-
-            const deps: SlackCommandDependencies = {
-                // Node retrieval
-                getNodes: () => {
-                    try {
-                        const storage = new SlackFeatureMapStorage();
-                        return storage.loadAll();
-                    } catch {
-                        return [];
-                    }
-                },
-                addNode: (node) => SimplifiedWorkflowCanvasProvider.currentPanel?.addNodeFromSlack(node),
-
-                // Node management
-                updateNode: (node) => {
-                    SimplifiedWorkflowCanvasProvider.currentPanel?.updateNodeFromSlack(node);
-                },
-                getNodeById: (nodeId) => {
-                    try {
-                        const storage = new SlackFeatureMapStorage();
-                        return storage.loadAll().find(n => n.id === nodeId);
-                    } catch {
-                        return undefined;
-                    }
-                },
-
-                // BDD management
-                getBddSpec: async (nodeId) => {
-                    try {
-                        const storage = new SlackFeatureMapStorage();
-                        const nodes = storage.loadAll();
-                        const node = nodes.find(n => n.id === nodeId);
-                        if (!node) {
-                            logExtension(`getBddSpec: Node not found: ${nodeId}`);
-                            return null;
-                        }
-
-                        logExtension(`getBddSpec: Node ${node.title}, workflowId=${node.workflowId}, fileName=${(node as any).fileName}`);
-
-                        const bddFile = (node as any).bddSpecFile;
-                        if (!bddFile) {
-                            // Try default path using workflowId (folder) and fileName (kebab-case)
-                            const featurePath = getFeatureFilePath(node.workflowId || '', (node as any).fileName || node.title);
-                            const fullPath = pathModule.join(workspaceFolder.uri.fsPath, featurePath);
-                            logExtension(`getBddSpec: Looking for BDD at: ${fullPath}`);
-                            if (fs.existsSync(fullPath)) {
-                                logExtension(`getBddSpec: Found BDD file`);
-                                return fs.readFileSync(fullPath, 'utf-8');
-                            }
-                            logExtension(`getBddSpec: BDD file not found`);
-                            return null;
-                        }
-
-                        const fullPath = pathModule.join(workspaceFolder.uri.fsPath, bddFile);
-                        logExtension(`getBddSpec: Using bddSpecFile: ${fullPath}`);
-                        if (fs.existsSync(fullPath)) {
-                            return fs.readFileSync(fullPath, 'utf-8');
-                        }
-                        return null;
-                    } catch (error) {
-                        logError('EXTENSION', 'getBddSpec failed', error);
-                        return null;
-                    }
-                },
-                saveBddSpec: async (nodeId, spec) => {
-                    const storage = new SlackFeatureMapStorage();
-                    const nodes = storage.loadAll();
-                    const node = nodes.find(n => n.id === nodeId);
-                    if (!node) {
-                        logExtension(`saveBddSpec: Node not found: ${nodeId}`);
-                        throw new Error(`Node not found: ${nodeId}`);
-                    }
-
-                    logExtension(`saveBddSpec: Node ${node.title}, workflowId=${node.workflowId}, fileName=${(node as any).fileName}`);
-
-                    // Use workflowId (folder) and fileName (kebab-case)
-                    const featurePath = getFeatureFilePath(node.workflowId || '', (node as any).fileName || node.title);
-                    const fullPath = pathModule.join(workspaceFolder.uri.fsPath, featurePath);
-
-                    logExtension(`saveBddSpec: Saving to: ${fullPath}`);
-
-                    // Ensure directory exists
-                    const dir = pathModule.dirname(fullPath);
-                    if (!fs.existsSync(dir)) {
-                        fs.mkdirSync(dir, { recursive: true });
-                    }
-
-                    fs.writeFileSync(fullPath, spec, 'utf-8');
-                    logExtension(`saveBddSpec: Saved BDD spec for ${node.title} to ${featurePath}`);
-                },
-
-                // Automation
-                startAutomation: async () => {
-                    if (!SimplifiedWorkflowCanvasProvider.currentPanel) {
-                        logExtension('startAutomation: Canvas panel not open');
-                        throw new Error('Please open the TDAD Canvas first (Ctrl+Shift+P > TDAD: Open Canvas)');
-                    }
-                    SimplifiedWorkflowCanvasProvider.currentPanel.sendMessage({ command: 'startAutomation' });
-                },
-                stopAutomation: () => {
-                    if (!SimplifiedWorkflowCanvasProvider.currentPanel) {
-                        logExtension('stopAutomation: Canvas panel not open');
-                        return;
-                    }
-                    SimplifiedWorkflowCanvasProvider.currentPanel.sendMessage({ command: 'stopAutomation' });
-                },
-                getAutomationStatus: () => {
-                    if (!SimplifiedWorkflowCanvasProvider.currentPanel) {
-                        return { status: 'canvas_not_open', message: 'Open TDAD Canvas to see status' };
-                    }
-                    return SimplifiedWorkflowCanvasProvider.currentPanel.getAutomationStatus() || { status: 'unknown' };
-                },
-                runNodeTests: async (nodeId: string) => {
-                    if (!SimplifiedWorkflowCanvasProvider.currentPanel) {
-                        logExtension('runNodeTests: Canvas panel not open');
-                        throw new Error('Please open the TDAD Canvas first (Ctrl+Shift+P > TDAD: Open Canvas)');
-                    }
-                    SimplifiedWorkflowCanvasProvider.currentPanel.sendMessage({ command: 'runTests', nodeId });
-                },
-                runSingleNode: async (nodeId, modes) => {
-                    if (!SimplifiedWorkflowCanvasProvider.currentPanel) {
-                        logExtension('runSingleNode: Canvas panel not open');
-                        throw new Error('Please open the TDAD Canvas first (Ctrl+Shift+P > TDAD: Open Canvas)');
-                    }
-                    SimplifiedWorkflowCanvasProvider.currentPanel.sendMessage({
-                        command: 'runSingleNodeAutomation',
-                        nodeId,
-                        modes
-                    });
-                },
-                runFolderNodes: async (folderId) => {
-                    if (!SimplifiedWorkflowCanvasProvider.currentPanel) {
-                        logExtension('runFolderNodes: Canvas panel not open');
-                        throw new Error('Please open the TDAD Canvas first (Ctrl+Shift+P > TDAD: Open Canvas)');
-                    }
-                    SimplifiedWorkflowCanvasProvider.currentPanel.sendMessage({
-                        command: 'runAllNodesAutomation',
-                        folderId,
-                        confirmed: true,
-                        allFolders: folderId === null
-                    });
-                },
-
-                // CLI
-                getCliOutput: (lines) => {
-                    try {
-                        const logPath = pathModule.join(workspaceFolder.uri.fsPath, '.tdad', 'logs', 'cli-output.log');
-                        if (!fs.existsSync(logPath)) return '';
-
-                        const content = fs.readFileSync(logPath, 'utf-8');
-                        const allLines = content.split('\n');
-                        return allLines.slice(-lines).join('\n');
-                    } catch {
-                        return '';
-                    }
-                },
-
-                workspacePath: workspaceFolder.uri.fsPath
-            };
-
-            slackCommandHandler = new SlackCommandHandler(slackService, deps);
-
-            // Register slash command handler
-            slackService.onSlashCommand(async (payload) => {
-                await slackCommandHandler?.handleCommand(payload);
-            });
+            // Connect using SlackInitializer
+            await connectSlack(botToken, appToken, workspaceFolder.uri.fsPath, slackState);
 
             // Enable Slack in config
             await vscode.workspace.getConfiguration('tdad').update('slack.enabled', true, vscode.ConfigurationTarget.Workspace);
@@ -867,217 +677,20 @@ export function activate(context: vscode.ExtensionContext) {
     const disconnectSlackCommand = vscode.commands.registerCommand('tdad.disconnectSlack', async () => {
         logExtension('disconnectSlack command executed');
 
-        if (slackService) {
-            await slackService.disconnect();
-            slackService = null;
-            slackCommandHandler = null;
-
-            // Disable Slack output capture
-            const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-            if (workspaceFolder) {
-                const cliLauncher = CLIAgentLauncher.getInstance(workspaceFolder.uri.fsPath);
-                cliLauncher.setSlackOutputEnabled(false);
-            }
-
-            // Update config
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        if (slackState.service && workspaceFolder) {
+            await disconnectSlack(workspaceFolder.uri.fsPath, slackState);
             await vscode.workspace.getConfiguration('tdad').update('slack.enabled', false, vscode.ConfigurationTarget.Workspace);
-
             vscode.window.showInformationMessage('Disconnected from Slack');
-            logExtension('Slack disconnected');
         } else {
             vscode.window.showInformationMessage('Not connected to Slack');
         }
     });
 
     // Auto-connect to Slack if enabled and tokens are stored
-    const slackEnabled = vscode.workspace.getConfiguration('tdad').get('slack.enabled');
     const slackWorkspaceFolder = vscode.workspace.workspaceFolders?.[0];
-    if (slackEnabled && slackWorkspaceFolder) {
-        context.secrets.get('tdad.slack.botToken').then(async (botToken) => {
-            const appToken = await context.secrets.get('tdad.slack.appToken');
-            if (botToken && appToken) {
-                try {
-                    slackService = SlackService.getInstance();
-                    await slackService.connect(botToken, appToken);
-
-                    const cliLauncher = CLIAgentLauncher.getInstance(slackWorkspaceFolder.uri.fsPath);
-                    cliLauncher.setSlackOutputEnabled(true);
-
-                    // Import dependencies for Slack
-                    const { FeatureMapStorage: AutoSlackFeatureMapStorage } = await import('./infrastructure/storage/FeatureMapStorage');
-                    const { getFeatureFilePath: autoGetFeatureFilePath } = await import('./shared/utils/nodePathUtils');
-                    const autoFs = await import('fs');
-                    const autoPathModule = await import('path');
-
-                    const deps: SlackCommandDependencies = {
-                        // Node retrieval
-                        getNodes: () => {
-                            try {
-                                const storage = new AutoSlackFeatureMapStorage();
-                                return storage.loadAll();
-                            } catch {
-                                return [];
-                            }
-                        },
-                        addNode: (node) => SimplifiedWorkflowCanvasProvider.currentPanel?.addNodeFromSlack(node),
-
-                        // Node management
-                        updateNode: (node) => {
-                            SimplifiedWorkflowCanvasProvider.currentPanel?.updateNodeFromSlack(node);
-                        },
-                        getNodeById: (nodeId) => {
-                            try {
-                                const storage = new AutoSlackFeatureMapStorage();
-                                return storage.loadAll().find(n => n.id === nodeId);
-                            } catch {
-                                return undefined;
-                            }
-                        },
-
-                        // BDD management
-                        getBddSpec: async (nodeId) => {
-                            try {
-                                const storage = new AutoSlackFeatureMapStorage();
-                                const nodes = storage.loadAll();
-                                const node = nodes.find(n => n.id === nodeId);
-                                if (!node) {
-                                    logExtension(`[Auto] getBddSpec: Node not found: ${nodeId}`);
-                                    return null;
-                                }
-
-                                logExtension(`[Auto] getBddSpec: Node ${node.title}, workflowId=${node.workflowId}, fileName=${(node as any).fileName}`);
-
-                                const bddFile = (node as any).bddSpecFile;
-                                if (!bddFile) {
-                                    // Use workflowId (folder) and fileName (kebab-case)
-                                    const featurePath = autoGetFeatureFilePath(node.workflowId || '', (node as any).fileName || node.title);
-                                    const fullPath = autoPathModule.join(slackWorkspaceFolder.uri.fsPath, featurePath);
-                                    logExtension(`[Auto] getBddSpec: Looking for BDD at: ${fullPath}`);
-                                    if (autoFs.existsSync(fullPath)) {
-                                        logExtension(`[Auto] getBddSpec: Found BDD file`);
-                                        return autoFs.readFileSync(fullPath, 'utf-8');
-                                    }
-                                    logExtension(`[Auto] getBddSpec: BDD file not found`);
-                                    return null;
-                                }
-
-                                const fullPath = autoPathModule.join(slackWorkspaceFolder.uri.fsPath, bddFile);
-                                logExtension(`[Auto] getBddSpec: Using bddSpecFile: ${fullPath}`);
-                                if (autoFs.existsSync(fullPath)) {
-                                    return autoFs.readFileSync(fullPath, 'utf-8');
-                                }
-                                return null;
-                            } catch (error) {
-                                logError('EXTENSION', '[Auto] getBddSpec failed', error);
-                                return null;
-                            }
-                        },
-                        saveBddSpec: async (nodeId, spec) => {
-                            const storage = new AutoSlackFeatureMapStorage();
-                            const nodes = storage.loadAll();
-                            const node = nodes.find(n => n.id === nodeId);
-                            if (!node) {
-                                logExtension(`[Auto] saveBddSpec: Node not found: ${nodeId}`);
-                                throw new Error(`Node not found: ${nodeId}`);
-                            }
-
-                            logExtension(`[Auto] saveBddSpec: Node ${node.title}, workflowId=${node.workflowId}, fileName=${(node as any).fileName}`);
-
-                            // Use workflowId (folder) and fileName (kebab-case)
-                            const featurePath = autoGetFeatureFilePath(node.workflowId || '', (node as any).fileName || node.title);
-                            const fullPath = autoPathModule.join(slackWorkspaceFolder.uri.fsPath, featurePath);
-
-                            logExtension(`[Auto] saveBddSpec: Saving to: ${fullPath}`);
-
-                            const dir = autoPathModule.dirname(fullPath);
-                            if (!autoFs.existsSync(dir)) {
-                                autoFs.mkdirSync(dir, { recursive: true });
-                            }
-
-                            autoFs.writeFileSync(fullPath, spec, 'utf-8');
-                            logExtension(`[Auto] saveBddSpec: Saved BDD spec for ${node.title} to ${featurePath}`);
-                        },
-
-                        // Automation
-                        startAutomation: async () => {
-                            if (!SimplifiedWorkflowCanvasProvider.currentPanel) {
-                                logExtension('[Auto] startAutomation: Canvas panel not open');
-                                throw new Error('Please open the TDAD Canvas first (Ctrl+Shift+P > TDAD: Open Canvas)');
-                            }
-                            SimplifiedWorkflowCanvasProvider.currentPanel.sendMessage({ command: 'startAutomation' });
-                        },
-                        stopAutomation: () => {
-                            if (!SimplifiedWorkflowCanvasProvider.currentPanel) {
-                                logExtension('[Auto] stopAutomation: Canvas panel not open');
-                                return;
-                            }
-                            SimplifiedWorkflowCanvasProvider.currentPanel.sendMessage({ command: 'stopAutomation' });
-                        },
-                        getAutomationStatus: () => {
-                            if (!SimplifiedWorkflowCanvasProvider.currentPanel) {
-                                return { status: 'canvas_not_open', message: 'Open TDAD Canvas to see status' };
-                            }
-                            return SimplifiedWorkflowCanvasProvider.currentPanel.getAutomationStatus() || { status: 'unknown' };
-                        },
-                        runNodeTests: async (nodeId: string) => {
-                            if (!SimplifiedWorkflowCanvasProvider.currentPanel) {
-                                logExtension('[Auto] runNodeTests: Canvas panel not open');
-                                throw new Error('Please open the TDAD Canvas first (Ctrl+Shift+P > TDAD: Open Canvas)');
-                            }
-                            SimplifiedWorkflowCanvasProvider.currentPanel.sendMessage({ command: 'runTests', nodeId });
-                        },
-                        runSingleNode: async (nodeId, modes) => {
-                            if (!SimplifiedWorkflowCanvasProvider.currentPanel) {
-                                logExtension('[Auto] runSingleNode: Canvas panel not open');
-                                throw new Error('Please open the TDAD Canvas first (Ctrl+Shift+P > TDAD: Open Canvas)');
-                            }
-                            SimplifiedWorkflowCanvasProvider.currentPanel.sendMessage({
-                                command: 'runSingleNodeAutomation',
-                                nodeId,
-                                modes
-                            });
-                        },
-                        runFolderNodes: async (folderId) => {
-                            if (!SimplifiedWorkflowCanvasProvider.currentPanel) {
-                                logExtension('[Auto] runFolderNodes: Canvas panel not open');
-                                throw new Error('Please open the TDAD Canvas first (Ctrl+Shift+P > TDAD: Open Canvas)');
-                            }
-                            SimplifiedWorkflowCanvasProvider.currentPanel.sendMessage({
-                                command: 'runAllNodesAutomation',
-                                folderId,
-                                confirmed: true,
-                                allFolders: folderId === null
-                            });
-                        },
-
-                        // CLI
-                        getCliOutput: (lines) => {
-                            try {
-                                const logPath = autoPathModule.join(slackWorkspaceFolder.uri.fsPath, '.tdad', 'logs', 'cli-output.log');
-                                if (!autoFs.existsSync(logPath)) return '';
-
-                                const content = autoFs.readFileSync(logPath, 'utf-8');
-                                const allLines = content.split('\n');
-                                return allLines.slice(-lines).join('\n');
-                            } catch {
-                                return '';
-                            }
-                        },
-
-                        workspacePath: slackWorkspaceFolder.uri.fsPath
-                    };
-
-                    slackCommandHandler = new SlackCommandHandler(slackService, deps);
-                    slackService.onSlashCommand(async (payload) => {
-                        await slackCommandHandler?.handleCommand(payload);
-                    });
-
-                    logExtension('Slack auto-connected on startup');
-                } catch (error) {
-                    logError('EXTENSION', 'Failed to auto-connect Slack', error);
-                }
-            }
-        });
+    if (slackWorkspaceFolder) {
+        autoConnectSlack(context, slackWorkspaceFolder.uri.fsPath, slackState);
     }
 
     context.subscriptions.push(

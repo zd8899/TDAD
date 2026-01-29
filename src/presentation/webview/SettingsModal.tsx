@@ -43,6 +43,7 @@ interface SettingsModalProps {
         testSettings?: TestSettings;
         cliSettings?: CLISettings;
         urls?: Record<string, string>;
+        autopilotSettings?: { betaCode?: string };
     };
     onClose: () => void;
     onUpdateSettings: (data: any) => void;
@@ -50,7 +51,7 @@ interface SettingsModalProps {
     initialTab?: SettingsTab;
 }
 
-type SettingsTab = 'project' | 'testing' | 'autopilot' | 'prompts';
+type SettingsTab = 'project' | 'testing' | 'autopilot' | 'prompts' | 'slack';
 
 const CLI_PRESETS = [
     { id: 'claude', label: 'Claude Code', baseCommand: 'claude', command: 'claude "Read .tdad/NEXT_TASK.md and execute the task. When done, write DONE to .tdad/AGENT_DONE.md"' },
@@ -137,6 +138,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     
     // Saving state for UI feedback
     const [isSaving, setIsSaving] = useState(false);
+
+    // Slack setup state
+    const [slackAppName, setSlackAppName] = useState('Personal');
+    const [manifestCopied, setManifestCopied] = useState(false);
+    const [slackOpened, setSlackOpened] = useState(false);
+    const [saving, setSaving] = useState(false);
 
     // Update active tab when initialTab prop changes
     useEffect(() => {
@@ -503,7 +510,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             ))}
                             <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
                                 <input type="text" value={newUrlName} onChange={(e) => setNewUrlName(e.target.value)} placeholder="Name (e.g. ui, api)" style={{ ...selectStyle, width: '120px' }} />
-                                <input type="text" value={newUrlValue} onChange={(e) => setNewUrlValue(e.target.value)} placeholder="http://localhost:PORT" style={{ ...selectStyle, flex: 1 }} onKeyDown={e => e.key === 'Enter' && handleAddUrl()} />
+                                <input type="text" value={newUrlValue} onChange={(e) => setNewUrlValue(e.target.value)} placeholder="http://localhost:3000" style={{ ...selectStyle, flex: 1 }} onKeyDown={e => e.key === 'Enter' && handleAddUrl()} />
                                 <button onClick={handleAddUrl} disabled={!newUrlName.trim() || !newUrlValue.trim()} style={{ padding: '6px 12px', background: 'var(--vscode-button-background)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>+ Add</button>
                             </div>
                         </div>
@@ -680,6 +687,239 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         ))}
                     </div>
                 );
+
+            case 'slack':
+                const SLACK_MANIFEST = JSON.stringify({
+                    "display_information": {
+                        "name": `TDAD - ${slackAppName}`,
+                        "description": "My personal TDAD workflow automation",
+                        "background_color": "#2c2d30"
+                    },
+                    "features": {
+                        "app_home": { "home_tab_enabled": true, "messages_tab_enabled": false },
+                        "bot_user": { "display_name": "TDAD", "always_online": true },
+                        "slash_commands": [{ "command": "/tdad", "description": "TDAD controls and help", "usage_hint": "[command]", "should_escape": false }]
+                    },
+                    "oauth_config": { "scopes": { "bot": ["app_mentions:read", "channels:history", "channels:join", "channels:read", "chat:write", "commands", "files:write", "users:read"] } },
+                    "settings": {
+                        "event_subscriptions": { "bot_events": ["app_home_opened", "app_mention", "message.channels"] },
+                        "interactivity": { "is_enabled": true },
+                        "org_deploy_enabled": false,
+                        "socket_mode_enabled": true,
+                        "token_rotation_enabled": false
+                    }
+                }, null, 2);
+
+                const stepStyle = {
+                    padding: '20px',
+                    marginBottom: '16px',
+                    border: '1px solid rgba(0,0,0,0.1)',
+                    borderRadius: '8px',
+                    background: 'rgba(0,0,0,0.02)'
+                };
+
+                const StepHeader = ({ number, title }: { number: number, title: string }) => (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                        <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#611f69', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: '15px', flexShrink: 0 }}>{number}</div>
+                        <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 600 }}>{title}</h4>
+                    </div>
+                );
+
+                return (
+                    <div>
+                        <div style={{ marginBottom: '20px', padding: '12px', background: 'rgba(97, 31, 105, 0.1)', borderRadius: '8px', border: '1px solid rgba(97, 31, 105, 0.2)' }}>
+                            <h4 style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 600 }}>Slack Remote Control</h4>
+                            <p style={{ margin: 0, fontSize: '12px', color: 'var(--vscode-descriptionForeground)', lineHeight: 1.4 }}>
+                                Control TDAD workflows from Slack. Create your personal Slack app in 5 steps.
+                            </p>
+                        </div>
+
+                        {/* Step 1: Copy Manifest */}
+                        <div style={stepStyle}>
+                            <StepHeader number={1} title="Copy App Manifest" />
+                            <div style={{ fontSize: '12px', color: 'var(--vscode-descriptionForeground)', marginBottom: '14px', paddingLeft: '44px', lineHeight: '1.6' }}>
+                                This manifest auto-configures all Slack app settings (permissions, commands, etc.) so you don't have to set them manually.
+                            </div>
+                            <div style={{ paddingLeft: '44px' }}>
+                                <button
+                                    onClick={() => {
+                                        postMessage({ command: 'copyToClipboard', text: SLACK_MANIFEST });
+                                        setManifestCopied(true);
+                                        setTimeout(() => setManifestCopied(false), 2000);
+                                    }}
+                                    style={{
+                                        padding: '10px 20px',
+                                        background: manifestCopied ? '#28a745' : '#611f69',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '6px',
+                                        cursor: 'pointer',
+                                        fontSize: '13px',
+                                        fontWeight: 600,
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    {manifestCopied ? '✓ Copied!' : '📋 Copy Manifest'}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Step 2: Open Slack */}
+                        <div style={stepStyle}>
+                            <StepHeader number={2} title="Create Slack App" />
+                            <div style={{ fontSize: '12px', color: 'var(--vscode-descriptionForeground)', marginBottom: '14px', paddingLeft: '44px', lineHeight: '1.6' }}>
+                                • Click "From an app manifest"<br/>
+                                • Select your Slack workspace<br/>
+                                • Click "Next"<br/>
+                                • Paste the manifest (Ctrl+V)<br/>
+                                • Click "Next" → "Create"
+                            </div>
+                            <div style={{ paddingLeft: '44px' }}>
+                                <button
+                                    onClick={() => {
+                                        postMessage({ command: 'openUrl', url: 'https://api.slack.com/apps/new' });
+                                        setSlackOpened(true);
+                                        setTimeout(() => setSlackOpened(false), 2000);
+                                    }}
+                                    style={{
+                                        padding: '10px 20px',
+                                        background: slackOpened ? '#28a745' : '#007a5a',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '6px',
+                                        cursor: 'pointer',
+                                        fontSize: '13px',
+                                        fontWeight: 600,
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    {slackOpened ? '✓ Opening...' : '🔗 Open Slack'}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Step 3: App-Level Token */}
+                        <div style={stepStyle}>
+                            <StepHeader number={3} title="Get App-Level Token" />
+                            <div style={{ fontSize: '12px', color: 'var(--vscode-descriptionForeground)', marginBottom: '14px', paddingLeft: '44px', lineHeight: '1.6' }}>
+                                After creating the app, you'll land on "Basic Information":<br/>
+                                • Scroll to "App-Level Tokens" section<br/>
+                                • Click "Generate Token and Scopes"<br/>
+                                • Name: "TDAD Socket"<br/>
+                                • Add scope: <strong>connections:write</strong><br/>
+                                • Click "Generate" and copy token
+                            </div>
+                            <div style={{ paddingLeft: '44px' }}>
+                                <input
+                                    type="password"
+                                    placeholder="xapp-..."
+                                    style={{
+                                        width: '100%',
+                                        maxWidth: '500px',
+                                        padding: '10px 12px',
+                                        fontSize: '13px',
+                                        fontFamily: 'Consolas, Monaco, monospace',
+                                        border: '1px solid var(--vscode-input-border)',
+                                        borderRadius: '6px',
+                                        background: 'var(--vscode-input-background)',
+                                        color: 'var(--vscode-input-foreground)'
+                                    }}
+                                    onChange={(e) => {
+                                        (window as any).slackAppToken = e.target.value;
+                                    }}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Step 4: Bot Token */}
+                        <div style={stepStyle}>
+                            <StepHeader number={4} title="Get Bot Token" />
+                            <div style={{ fontSize: '12px', color: 'var(--vscode-descriptionForeground)', marginBottom: '14px', paddingLeft: '44px', lineHeight: '1.6' }}>
+                                • Click "Install App" in left sidebar<br/>
+                                • Click green "Install to [YourWorkspace]" button<br/>
+                                • Click "Allow"<br/>
+                                • Bot token appears automatically<br/>
+                                • Click "Copy" button
+                            </div>
+                            <div style={{ paddingLeft: '44px' }}>
+                                <input
+                                    type="password"
+                                    placeholder="xoxb-..."
+                                    style={{
+                                        width: '100%',
+                                        maxWidth: '500px',
+                                        padding: '10px 12px',
+                                        fontSize: '13px',
+                                        fontFamily: 'Consolas, Monaco, monospace',
+                                        border: '1px solid var(--vscode-input-border)',
+                                        borderRadius: '6px',
+                                        background: 'var(--vscode-input-background)',
+                                        color: 'var(--vscode-input-foreground)'
+                                    }}
+                                    onChange={(e) => {
+                                        (window as any).slackBotToken = e.target.value;
+                                    }}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Step 5: Save */}
+                        <div style={stepStyle}>
+                            <StepHeader number={5} title="Save & Activate" />
+                            <div style={{ fontSize: '12px', color: 'var(--vscode-descriptionForeground)', marginBottom: '14px', paddingLeft: '44px', lineHeight: '1.6' }}>
+                                Tokens are stored securely in VS Code's encrypted storage. VS Code will reload to activate the connection.
+                            </div>
+                            <div style={{ paddingLeft: '44px' }}>
+                                <button
+                                    onClick={() => {
+                                        const botToken = (window as any).slackBotToken;
+                                        const appToken = (window as any).slackAppToken;
+
+                                        if (!botToken || !appToken) {
+                                            postMessage({ command: 'showMessage', text: '⚠️ Please enter both tokens' });
+                                            return;
+                                        }
+
+                                        if (!botToken.startsWith('xoxb-')) {
+                                            postMessage({ command: 'showMessage', text: '⚠️ Bot token must start with xoxb-' });
+                                            return;
+                                        }
+
+                                        if (!appToken.startsWith('xapp-')) {
+                                            postMessage({ command: 'showMessage', text: '⚠️ App token must start with xapp-' });
+                                            return;
+                                        }
+
+                                        setSaving(true);
+                                        postMessage({
+                                            command: 'saveSlackTokens',
+                                            botToken,
+                                            appToken
+                                        });
+                                        setTimeout(() => setSaving(false), 2000);
+                                    }}
+                                    disabled={saving}
+                                    style={{
+                                        width: '100%',
+                                        maxWidth: '500px',
+                                        padding: '12px',
+                                        background: saving ? '#28a745' : '#611f69',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '6px',
+                                        cursor: saving ? 'wait' : 'pointer',
+                                        fontSize: '14px',
+                                        fontWeight: 600,
+                                        transition: 'all 0.2s',
+                                        opacity: saving ? 0.9 : 1
+                                    }}
+                                >
+                                    {saving ? '⏳ Saving...' : '💾 Save & Activate'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
         }
     };
 
@@ -692,7 +932,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
 
                 <div style={{ display: 'flex', padding: '0 24px', borderBottom: '1px solid rgba(0,0,0,0.06)', flexShrink: 0 }}>
-                    {(['project', 'testing', 'autopilot', 'prompts'] as SettingsTab[]).map((tab) => (
+                    {(['project', 'testing', 'autopilot', 'prompts', 'slack'] as SettingsTab[]).map((tab) => (
                         <button
                             key={tab}
                             onClick={() => setActiveTab(tab as SettingsTab)}

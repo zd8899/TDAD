@@ -69,6 +69,7 @@ export class CLIAgentLauncher {
 
     /**
      * Ensure logs directory exists and clear the log file
+     * Handles EBUSY errors on Windows when file is locked by Start-Transcript
      */
     private prepareLogFile(): void {
         const logPath = this.getOutputLogPath();
@@ -78,8 +79,17 @@ export class CLIAgentLauncher {
             fs.mkdirSync(logsDir, { recursive: true });
         }
 
-        // Clear the log file
-        fs.writeFileSync(logPath, '');
+        // Clear the log file - handle EBUSY if file is locked by previous transcript
+        try {
+            fs.writeFileSync(logPath, '');
+        } catch (error: unknown) {
+            const err = error as NodeJS.ErrnoException;
+            if (err.code === 'EBUSY') {
+                logger.log('CLI-AGENT-LAUNCHER', 'Log file is busy (locked by previous transcript), continuing anyway');
+            } else {
+                throw error;
+            }
+        }
     }
 
     public static getInstance(workspacePath?: string): CLIAgentLauncher {
@@ -112,6 +122,7 @@ export class CLIAgentLauncher {
     /**
      * Create a fresh terminal for each task
      * Each CLI agent invocation needs its own terminal session
+     * On Windows with Slack output enabled, forces PowerShell for tee compatibility
      */
     private createFreshTerminal(): vscode.Terminal {
         // Dispose of existing terminal if it exists
@@ -125,12 +136,21 @@ export class CLIAgentLauncher {
             this.terminal = null;
         }
 
-        // Create new terminal
-        this.terminal = vscode.window.createTerminal({
+        const isWindows = os.platform() === 'win32';
+        const terminalOptions: vscode.TerminalOptions = {
             name: this.terminalName,
             cwd: this.workspacePath
-        });
-        logger.log('CLI-AGENT-LAUNCHER', 'Created new TDAD Agent terminal');
+        };
+
+        // On Windows with Slack output capture, use PowerShell
+        // Note: Start-Transcript has limited capture for interactive TUIs
+        if (isWindows && this.slackOutputEnabled) {
+            terminalOptions.shellPath = 'powershell.exe';
+            logger.log('CLI-AGENT-LAUNCHER', 'Using PowerShell for Slack output capture');
+        }
+
+        this.terminal = vscode.window.createTerminal(terminalOptions);
+        logger.log('CLI-AGENT-LAUNCHER', `Created new TDAD Agent terminal${isWindows && this.slackOutputEnabled ? ' (PowerShell)' : ''}`);
 
         return this.terminal;
     }
@@ -219,24 +239,33 @@ export class CLIAgentLauncher {
 
     /**
      * Wrap command with output capture for Slack streaming
-     * Uses tee on Unix-like systems, Tee-Object on Windows PowerShell
+     * Handles different shell environments:
+     * - Unix (bash/zsh): Uses tee command
+     * - Windows: Runs interactively, uses clipboard capture for Slack output
      */
     private wrapCommandWithOutputCapture(command: string): string {
         this.prepareLogFile();
         const logPath = this.getOutputLogPath();
-
-        // Check platform and shell
         const isWindows = os.platform() === 'win32';
 
-        if (isWindows) {
-            // For Windows, use PowerShell's Tee-Object or bash tee if using Git Bash
-            // Most dev environments on Windows use Git Bash or WSL, so try bash syntax
-            // The terminal might be PowerShell, Git Bash, or WSL - bash syntax works in Git Bash/WSL
-            return `${command} 2>&1 | tee "${logPath.replace(/\\/g, '/')}"`;
-        } else {
-            // Unix-like: use standard tee
+        logger.log('CLI-AGENT-LAUNCHER', `Output log path: ${logPath}`);
+
+        if (!isWindows) {
+            // Unix: Use tee for output capture
+            logger.log('CLI-AGENT-LAUNCHER', 'Unix - using tee');
             return `${command} 2>&1 | tee "${logPath}"`;
         }
+
+        // Windows: Run Claude interactively (preserves TUI)
+        // Output capture is done via clipboard snapshot (captureTerminalOutput method)
+        // Write a marker to log file so we know capture method is clipboard-based
+        logger.log('CLI-AGENT-LAUNCHER', 'Windows - running interactively, using clipboard capture');
+
+        const timestamp = new Date().toISOString();
+        return `@"
+[TDAD] Started at ${timestamp}
+[TDAD] Use 'Snapshot CLI' in Slack to capture current output
+"@ | Out-File -FilePath "${logPath}" -Encoding utf8; ${command}`;
     }
 
     /**
@@ -356,6 +385,78 @@ export class CLIAgentLauncher {
             await vscode.window.showTextDocument(doc);
         }
 
+        return false;
+    }
+
+    /**
+     * Capture terminal output via clipboard (for Windows interactive mode)
+     * Uses keyboard shortcuts to select all and copy terminal content
+     * @returns The terminal content or null if capture failed
+     */
+    public async captureTerminalOutput(): Promise<string | null> {
+        const terminal = this.terminal || vscode.window.terminals.find(t => t.name === this.terminalName);
+        if (!terminal) {
+            logger.log('CLI-AGENT-LAUNCHER', 'No terminal found for capture');
+            return null;
+        }
+
+        try {
+            // Show terminal and give it focus
+            terminal.show(false); // false = take focus
+
+            // Small delay to ensure terminal is focused
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            // Select all text in terminal (Ctrl+Shift+A on Windows, Cmd+A on Mac)
+            await vscode.commands.executeCommand('workbench.action.terminal.selectAll');
+
+            // Small delay for selection
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            // Copy selection to clipboard
+            await vscode.commands.executeCommand('workbench.action.terminal.copySelection');
+
+            // Small delay for clipboard
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            // Read from clipboard
+            const content = await vscode.env.clipboard.readText();
+
+            // Clear selection to restore terminal state
+            await vscode.commands.executeCommand('workbench.action.terminal.clearSelection');
+
+            logger.log('CLI-AGENT-LAUNCHER', `Captured ${content.length} chars from terminal`);
+            return content;
+
+        } catch (error) {
+            logger.error('CLI-AGENT-LAUNCHER', 'Failed to capture terminal output', error);
+            return null;
+        }
+    }
+
+    /**
+     * Kill the running CLI agent by disposing the terminal
+     * Disposing is more reliable than Ctrl+C, especially for Claude Code
+     * @returns true if terminal was found and disposed
+     */
+    public killTerminal(): boolean {
+        // Try our managed terminal first
+        if (this.terminal) {
+            this.terminal.dispose();
+            this.terminal = null;
+            logger.log('CLI-AGENT-LAUNCHER', 'Disposed managed terminal');
+            return true;
+        }
+
+        // Fallback: find and dispose any TDAD Agent terminal
+        const terminal = vscode.window.terminals.find(t => t.name === this.terminalName);
+        if (terminal) {
+            terminal.dispose();
+            logger.log('CLI-AGENT-LAUNCHER', 'Disposed found TDAD Agent terminal');
+            return true;
+        }
+
+        logger.log('CLI-AGENT-LAUNCHER', 'No TDAD Agent terminal found to kill');
         return false;
     }
 

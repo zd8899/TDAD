@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { SlackService } from './SlackService';
 import { logger } from '../../shared/utils/Logger';
+import { filterTranscriptNoise } from '../../shared/utils/PowerShellTranscriptFilter';
 
 const BATCH_INTERVAL_MS = 5000; // Send batches every 5 seconds
 const MAX_CHUNK_SIZE = 3500; // Slack message limit with buffer
@@ -40,9 +41,25 @@ export class CLIOutputWatcher {
             fs.mkdirSync(logsDir, { recursive: true });
         }
 
-        // Clear/create log file
-        fs.writeFileSync(this.logFilePath, '');
-        this.lastPosition = 0;
+        // Clear/create log file - handle EBUSY if file is locked
+        try {
+            fs.writeFileSync(this.logFilePath, '');
+            this.lastPosition = 0;
+        } catch (error: unknown) {
+            const err = error as NodeJS.ErrnoException;
+            if (err.code === 'EBUSY') {
+                // File is locked by PowerShell - skip existing content (including header)
+                try {
+                    const stats = fs.statSync(this.logFilePath);
+                    this.lastPosition = stats.size;
+                    logger.log('CLI-WATCHER', `Log file is busy, starting from position ${this.lastPosition}`);
+                } catch {
+                    this.lastPosition = 0;
+                }
+            } else {
+                throw error;
+            }
+        }
         this.batchBuffer = '';
 
         // Start file watcher
@@ -93,21 +110,42 @@ export class CLIOutputWatcher {
                 return;
             }
 
-            const stats = fs.statSync(this.logFilePath);
+            let stats: fs.Stats;
+            try {
+                stats = fs.statSync(this.logFilePath);
+            } catch (statError: unknown) {
+                // File might be locked by Start-Transcript on Windows - skip this cycle
+                const error = statError as NodeJS.ErrnoException;
+                if (error.code === 'EBUSY') {
+                    return;
+                }
+                throw statError;
+            }
+
             if (stats.size <= this.lastPosition) {
                 return;
             }
 
-            // Read new content from last position
-            const fd = fs.openSync(this.logFilePath, 'r');
-            const bufferSize = stats.size - this.lastPosition;
-            const buffer = Buffer.alloc(bufferSize);
+            // Read new content using readFileSync which handles locks better than openSync
+            // on Windows. We read the whole file and slice to get new content.
+            let fileContent: string;
+            try {
+                fileContent = fs.readFileSync(this.logFilePath, 'utf-8');
+            } catch (readError: unknown) {
+                // File might be locked by Start-Transcript on Windows - skip this cycle
+                const error = readError as NodeJS.ErrnoException;
+                if (error.code === 'EBUSY') {
+                    return;
+                }
+                throw readError;
+            }
 
-            fs.readSync(fd, buffer, 0, bufferSize, this.lastPosition);
-            fs.closeSync(fd);
+            // Extract only new content from last position
+            let newContent = fileContent.substring(this.lastPosition);
+            this.lastPosition = fileContent.length;
 
-            const newContent = buffer.toString('utf-8');
-            this.lastPosition = stats.size;
+            // Filter out PowerShell transcript headers/footers
+            newContent = filterTranscriptNoise(newContent);
 
             if (newContent.trim()) {
                 this.batchBuffer += newContent;
