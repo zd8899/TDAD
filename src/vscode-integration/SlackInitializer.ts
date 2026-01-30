@@ -29,7 +29,9 @@ export function createSlackCommandDependencies(workspacePath: string): SlackComm
                 return [];
             }
         },
-        addNode: (node: Node) => SimplifiedWorkflowCanvasProvider.currentPanel?.addNodeFromSlack(node),
+        addNode: (node: Partial<Node>) => {
+            SimplifiedWorkflowCanvasProvider.currentPanel?.addNodeFromSlack(node as Node);
+        },
 
         // Node management
         updateNode: (node: Node) => {
@@ -157,7 +159,7 @@ export function createSlackCommandDependencies(workspacePath: string): SlackComm
             logExtension(`runSingleNode: Calling direct automation for ${nodeId} with modes [${modes.join(', ')}]`);
             return await SimplifiedWorkflowCanvasProvider.currentPanel.runSingleNodeAutomation(nodeId, modes as ('bdd' | 'test' | 'run-fix')[]);
         },
-        runFolderNodes: async (folderId: string | null, modes?: string[]) => {
+        runFolderNodes: async (folderId: string | null, modes?: ('bdd' | 'test' | 'run-fix')[]) => {
             if (!SimplifiedWorkflowCanvasProvider.currentPanel) {
                 logExtension('runFolderNodes: Canvas panel not open');
                 throw new Error('Please open the TDAD Canvas first (Ctrl+Shift+P > TDAD: Open Canvas)');
