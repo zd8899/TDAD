@@ -5,6 +5,21 @@ All notable changes to the TDAD extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.9] - 2026-01-30
+
+### Added
+- Slack Remote Control with Edit Feature modal for easy feature modification
+- Automation progress notifications via Slack for real-time updates
+- GIF demonstrations in Slack documentation for visual guidance
+- Enhanced Home Tab interface for centralized Slack controls
+
+### Changed
+- Refactored Slack slash commands to Home Tab for improved user experience
+- Removed legacy slash command and CLI modal in favor of unified interface
+
+### Fixed
+- Resolved duplicate onStopAutomation prop in UnifiedBottomBar component
+
 ## [0.0.8] - 2026-01-26
 
 ### Added
