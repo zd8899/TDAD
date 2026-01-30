@@ -730,7 +730,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <div style={{ marginBottom: '20px', padding: '12px', background: 'rgba(97, 31, 105, 0.1)', borderRadius: '8px', border: '1px solid rgba(97, 31, 105, 0.2)' }}>
                             <h4 style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 600 }}>Slack Remote Control</h4>
                             <p style={{ margin: 0, fontSize: '12px', color: 'var(--vscode-descriptionForeground)', lineHeight: 1.4 }}>
-                                Control TDAD workflows from Slack. Create your personal Slack app in 5 steps.
+                                Build software from your phone. Start AI coding sessions, monitor progress, and ship features from anywhere.
+                            </p>
+                            <p style={{ margin: '8px 0 0 0', fontSize: '11px', color: '#d97706', fontWeight: 500 }}>
+                                Note: VS Code must be open for Slack commands to work.
                             </p>
                         </div>
 

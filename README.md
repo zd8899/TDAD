@@ -8,7 +8,7 @@
 
 It enforces a **Plan → Spec → Test → Fix** cycle where **runtime feedback** (not just text) guides your AI to deliver working software, not just snippets.
 
-**Key Features:** Local-first, Zero API calls, Use your own AI (Claude, ChatGPT, Cursor, etc.) and Free.
+**Key Features:** Local-first, Zero API calls, Use your own AI (Claude, ChatGPT, Cursor, etc.), Build remotely with Slack, and Free.
 
 <p align="center">
   <img src="media/workflow-fix.gif" alt="TDAD Demo - Test → Fix → Green" width="700">
@@ -293,6 +293,17 @@ Auto-Pilot (aka "Lazy Mode") automates the repetitive loop of BDD → Test → F
 4. TDAD runs the tests and loops until passing
 
 **Note:** Auto-Pilot works with your own CLI agents (Claude Code, Aider, etc.). TDAD doesn't accept or store any API keys - you use your preferred agent with your own credentials and security policies.
+
+### 8. Slack Remote Control (New)
+
+Build software from your phone. Start AI coding sessions, monitor progress, and ship features from anywhere via Slack.
+
+- **App Home Dashboard** - View all nodes, their status (Pending/Passing/Failing), and automation state
+- **Browse & Navigate** - Drill into folders and view node details
+- **Start Automation** - Run Plan, Test, or Run+Fix phases on any node or folder
+- **Real-time Updates** - Progress notifications in Slack threads as automation runs
+- **Edit Features** - Update node names, descriptions, and test layers via modals
+- **Terminal Interaction** - Send messages to your CLI agent directly from Slack
 
 
 ---
