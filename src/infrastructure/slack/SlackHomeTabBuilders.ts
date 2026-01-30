@@ -428,6 +428,12 @@ export function buildHomeTabNodeView(
         elements: [
             {
                 type: 'button',
+                text: { type: 'plain_text', text: 'Edit Feature' },
+                action_id: 'tdad_home_edit_feature',
+                value: node.id
+            },
+            {
+                type: 'button',
                 text: { type: 'plain_text', text: 'Edit Plan' },
                 action_id: 'tdad_home_edit_plan',
                 value: node.id

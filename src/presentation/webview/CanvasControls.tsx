@@ -68,12 +68,10 @@ const CanvasControls: React.FC<CanvasControlsProps> = ({
         </button>
         <button
           onClick={handleStopClick}
-          className={`canvas-controls__segment canvas-controls__segment--stop ${isRunningAllNodes ? 'canvas-controls__segment--stop-active' : ''}`}
-          disabled={!isRunningAllNodes}
-          title={isRunningAllNodes ? `Stop Auto-Pilot (${allNodesProgress || 'running...'})` : 'Stop Auto-Pilot'}
+          className="canvas-controls__segment canvas-controls__segment--stop"
+          title="Stop Auto-Pilot"
         >
           <span className="canvas-controls__icon">■</span>
-          <span>Stop</span>
         </button>
       </div>
 

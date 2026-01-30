@@ -73,6 +73,17 @@ export interface AutomationStatus {
     maxRetries?: number;
 }
 
+export interface AutomationProgressUpdate {
+    status: 'running' | 'completed' | 'stopped' | 'error';
+    totalNodes?: number;
+    currentIndex?: number;
+    currentNodeId?: string;
+    currentNodeTitle?: string;
+    completedCount?: number;
+    passedCount?: number;
+    message: string;
+}
+
 export interface SlackCommandDependencies {
     // Existing
     getNodes: () => import('./index').Node[];
@@ -104,4 +115,8 @@ export interface SlackCommandDependencies {
     // Channel management (for Home Tab fallback)
     getDefaultChannelId?: () => string | undefined;
     setDefaultChannelId?: (channelId: string) => void;
+
+    // Progress callback for Slack notifications
+    onAutomationProgress?: (update: AutomationProgressUpdate) => void;
+    setAutomationProgressCallback?: (callback: ((update: AutomationProgressUpdate) => void) | null) => void;
 }

@@ -22,6 +22,7 @@ export {
 export {
     buildPlanEditModal,
     buildAddNodeModal,
+    buildEditFeatureModal,
     buildAddFolderModal,
     buildAutoGeneratePlanModal,
     buildAutoGenerateTestsModal,

@@ -201,6 +201,16 @@ export function createSlackCommandDependencies(workspacePath: string): SlackComm
             }
         },
 
+        // Progress callback for Slack notifications
+        setAutomationProgressCallback: (callback) => {
+            if (SimplifiedWorkflowCanvasProvider.currentPanel) {
+                SimplifiedWorkflowCanvasProvider.currentPanel.setAutomationProgressCallback(callback);
+                logExtension(`setAutomationProgressCallback: ${callback ? 'set' : 'cleared'}`);
+            } else {
+                logExtension('setAutomationProgressCallback: Canvas panel not open');
+            }
+        },
+
         workspacePath
     };
 }

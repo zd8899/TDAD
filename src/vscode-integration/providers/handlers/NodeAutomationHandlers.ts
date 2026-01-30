@@ -7,6 +7,7 @@
 
 import * as vscode from 'vscode';
 import { Node, TestResult } from '../../../shared/types';
+import { AutomationProgressUpdate } from '../../../shared/types/slack';
 import { logCanvas, logError } from '../../../shared/utils/Logger';
 import { FeatureMapStorage } from '../../../infrastructure/storage/FeatureMapStorage';
 import { SimpleNodeManager } from '../SimpleNodeManager';
@@ -16,6 +17,7 @@ import { CLIAgentLauncher } from '../../CLIAgentLauncher';
 
 export class NodeAutomationHandlers {
     private singleNodeOrchestrator: SingleNodeOrchestrator | null = null;
+    private automationProgressCallback: ((update: AutomationProgressUpdate) => void) | null = null;
 
     constructor(
         private readonly webview: vscode.Webview,
@@ -26,6 +28,22 @@ export class NodeAutomationHandlers {
         private readonly testExecutionHandlers: TestExecutionHandlers,
         private readonly checkSingleNodeFileStatus: (nodeId: string) => Promise<void>
     ) {}
+
+    /**
+     * Set callback for automation progress updates (used by Slack integration)
+     */
+    setAutomationProgressCallback(callback: ((update: AutomationProgressUpdate) => void) | null): void {
+        this.automationProgressCallback = callback;
+    }
+
+    /**
+     * Notify progress callback if set
+     */
+    private notifyProgress(update: AutomationProgressUpdate): void {
+        if (this.automationProgressCallback) {
+            this.automationProgressCallback(update);
+        }
+    }
 
     /**
      * Sync file paths from source node to target node
@@ -403,12 +421,19 @@ export class NodeAutomationHandlers {
 
             logCanvas(`Found ${sortedNodes.length} nodes to process`);
 
+            const startMessage = `Starting automation for ${sortedNodes.length} nodes...`;
             this.webview.postMessage({
                 command: 'allNodesAutomationStatus',
                 status: 'running',
                 totalNodes: sortedNodes.length,
                 currentIndex: 0,
-                message: `Starting automation for ${sortedNodes.length} nodes...`
+                message: startMessage
+            });
+            this.notifyProgress({
+                status: 'running',
+                totalNodes: sortedNodes.length,
+                currentIndex: 0,
+                message: startMessage
             });
 
             vscode.window.showInformationMessage(`🚀 Starting automation for ${sortedNodes.length} nodes`);
@@ -418,6 +443,7 @@ export class NodeAutomationHandlers {
 
             for (let i = 0; i < sortedNodes.length; i++) {
                 const node = sortedNodes[i];
+                const progressMessage = `Processing ${i + 1}/${sortedNodes.length}: ${node.title}`;
 
                 this.webview.postMessage({
                     command: 'allNodesAutomationStatus',
@@ -426,7 +452,15 @@ export class NodeAutomationHandlers {
                     currentIndex: i,
                     currentNodeId: node.id,
                     currentNodeTitle: node.title,
-                    message: `Processing ${i + 1}/${sortedNodes.length}: ${node.title}`
+                    message: progressMessage
+                });
+                this.notifyProgress({
+                    status: 'running',
+                    totalNodes: sortedNodes.length,
+                    currentIndex: i,
+                    currentNodeId: node.id,
+                    currentNodeTitle: node.title,
+                    message: progressMessage
                 });
 
                 const result = await this.runSingleNodeAutomationAndWait(node, modes);
@@ -438,18 +472,27 @@ export class NodeAutomationHandlers {
 
                 if (result.stopped && i < sortedNodes.length - 1) {
                     logCanvas('Automation stopped by user');
+                    const stoppedMessage = 'Automation stopped';
                     this.webview.postMessage({
                         command: 'allNodesAutomationStatus',
                         status: 'stopped',
                         totalNodes: sortedNodes.length,
                         completedCount,
                         passedCount,
-                        message: 'Automation stopped'
+                        message: stoppedMessage
+                    });
+                    this.notifyProgress({
+                        status: 'stopped',
+                        totalNodes: sortedNodes.length,
+                        completedCount,
+                        passedCount,
+                        message: stoppedMessage
                     });
                     return;
                 }
             }
 
+            const completedMessage = `Completed: ${passedCount}/${completedCount} passed`;
             logCanvas(`All-nodes automation complete: ${passedCount}/${completedCount} passed`);
             this.webview.postMessage({
                 command: 'allNodesAutomationStatus',
@@ -457,7 +500,14 @@ export class NodeAutomationHandlers {
                 totalNodes: sortedNodes.length,
                 completedCount,
                 passedCount,
-                message: `Completed: ${passedCount}/${completedCount} passed`
+                message: completedMessage
+            });
+            this.notifyProgress({
+                status: 'completed',
+                totalNodes: sortedNodes.length,
+                completedCount,
+                passedCount,
+                message: completedMessage
             });
 
             if (passedCount === completedCount) {
@@ -469,10 +519,15 @@ export class NodeAutomationHandlers {
         } catch (error) {
             logError('CANVAS', 'Failed to run all-nodes automation', error);
             vscode.window.showErrorMessage(`Automation failed: ${error}`);
+            const errorMessage = `Error: ${error}`;
             this.webview.postMessage({
                 command: 'allNodesAutomationStatus',
                 status: 'error',
-                message: `Error: ${error}`
+                message: errorMessage
+            });
+            this.notifyProgress({
+                status: 'error',
+                message: errorMessage
             });
         }
     }

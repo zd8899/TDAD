@@ -10,6 +10,7 @@
 
 import * as vscode from 'vscode';
 import { Node, TestResult } from '../../../shared/types';
+import { AutomationProgressUpdate } from '../../../shared/types/slack';
 import { logError, logger } from '../../../shared/utils/Logger';
 import { FileNameGenerator } from '../../../shared/utils/fileNameGenerator';
 import { FeatureMapStorage } from '../../../infrastructure/storage/FeatureMapStorage';
@@ -222,5 +223,9 @@ export class TestWorkflowHandlers {
 
     handleStopAllNodesAutomation(): void {
         return this.nodeAutomationHandlers.handleStopAllNodesAutomation();
+    }
+
+    setAutomationProgressCallback(callback: ((update: AutomationProgressUpdate) => void) | null): void {
+        this.nodeAutomationHandlers.setAutomationProgressCallback(callback);
     }
 }

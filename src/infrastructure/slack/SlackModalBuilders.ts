@@ -4,6 +4,13 @@
 
 import { Node } from '../../shared/types';
 import { SlackBlock, getStatusEmoji, chunk } from './SlackBlockTypes';
+import {
+    featureFormFields,
+    testLayerOptions,
+    testLayersToValue,
+    formTitles,
+    buttonLabels
+} from '../../shared/config/featureFormConfig';
 
 /**
  * Build Plan edit modal view
@@ -113,6 +120,126 @@ export function buildAddNodeModal(channelId?: string, parentId?: string): any {
                 }
             }
         ]
+    };
+}
+
+/**
+ * Build Edit Feature modal view - matches canvas NodeForm.tsx
+ * Uses shared config from featureFormConfig.ts
+ */
+export function buildEditFeatureModal(node: Node, channelId?: string): any {
+    const metadata = JSON.stringify({ nodeId: node.id, channelId: channelId || '' });
+    const currentTestLayerValue = testLayersToValue((node as any).testLayers);
+
+    // Build test layer options for Slack static_select
+    const testLayerSelectOptions = testLayerOptions.map(opt => ({
+        text: { type: 'plain_text' as const, text: opt.slackLabel },
+        value: opt.value
+    }));
+
+    // Find initial option
+    const initialTestLayerOption = testLayerSelectOptions.find(opt => opt.value === currentTestLayerValue)
+        || testLayerSelectOptions[0];
+
+    const blocks: any[] = [
+        // Feature Name
+        {
+            type: 'input',
+            block_id: 'feature_name_block',
+            element: {
+                type: 'plain_text_input',
+                action_id: 'feature_name_input',
+                initial_value: node.title || '',
+                placeholder: {
+                    type: 'plain_text',
+                    text: featureFormFields.title.placeholder
+                }
+            },
+            label: {
+                type: 'plain_text',
+                text: featureFormFields.title.label + ' *'
+            }
+        },
+        // Feature Description
+        {
+            type: 'input',
+            block_id: 'feature_description_block',
+            optional: true,
+            element: {
+                type: 'plain_text_input',
+                action_id: 'feature_description_input',
+                multiline: true,
+                initial_value: node.description || '',
+                placeholder: {
+                    type: 'plain_text',
+                    text: 'Describe what this feature should accomplish...'
+                }
+            },
+            label: {
+                type: 'plain_text',
+                text: featureFormFields.description.label
+            },
+            hint: {
+                type: 'plain_text',
+                text: featureFormFields.description.hint || ''
+            }
+        },
+        // Test Layers
+        {
+            type: 'input',
+            block_id: 'test_layers_block',
+            optional: true,
+            element: {
+                type: 'static_select',
+                action_id: 'test_layers_input',
+                initial_option: initialTestLayerOption,
+                options: testLayerSelectOptions
+            },
+            label: {
+                type: 'plain_text',
+                text: featureFormFields.testLayers.label
+            },
+            hint: {
+                type: 'plain_text',
+                text: featureFormFields.testLayers.hint || ''
+            }
+        }
+    ];
+
+    // Show context files as read-only info (can't pick files from Slack)
+    const contextFiles = (node as any).contextFiles || [];
+    if (contextFiles.length > 0) {
+        const fileList = contextFiles.map((f: string) => {
+            const parts = f.split(/[/\\]/);
+            return parts[parts.length - 1] || f;
+        }).join(', ');
+
+        blocks.push({
+            type: 'section',
+            text: {
+                type: 'mrkdwn',
+                text: `*${featureFormFields.contextFiles.label}:* ${fileList}\n_Edit context files from the VS Code canvas_`
+            }
+        });
+    }
+
+    return {
+        type: 'modal',
+        callback_id: 'tdad_edit_feature_modal',
+        private_metadata: metadata,
+        title: {
+            type: 'plain_text',
+            text: formTitles.editFeature
+        },
+        submit: {
+            type: 'plain_text',
+            text: buttonLabels.save
+        },
+        close: {
+            type: 'plain_text',
+            text: buttonLabels.cancel
+        },
+        blocks
     };
 }
 

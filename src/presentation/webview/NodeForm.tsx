@@ -1,5 +1,13 @@
 import React, { useState } from 'react';
 import '../../styles/node-form.css';
+import {
+  featureFormFields,
+  testLayerOptions,
+  testLayersToValue,
+  valueToTestLayers,
+  formTitles,
+  buttonLabels
+} from '../../shared/config/featureFormConfig';
 
 type FormMode = 'feature' | 'folder';
 
@@ -49,22 +57,11 @@ const NodeForm: React.FC<NodeFormProps> = ({
   const [localContextFiles, setLocalContextFiles] = useState<string[]>(initialContextFiles);
   const [localDependencies, setLocalDependencies] = useState<DependencyNode[]>(initialDependencies);
 
-  // Helper to convert testLayers to select value
-  const getTestLayerValue = (): string => {
-    if (!testLayers || testLayers.length === 0) {return 'global';}
-    if (testLayers.includes('ui') && testLayers.includes('api')) {return 'both';}
-    if (testLayers.includes('ui')) {return 'ui';}
-    if (testLayers.includes('api')) {return 'api';}
-    return 'global';
-  };
+  // Use shared config for test layer value conversion
+  const getTestLayerValue = (): string => testLayersToValue(testLayers);
 
   const handleTestLayerChange = (value: string) => {
-    switch (value) {
-      case 'ui': setTestLayers(['ui']); break;
-      case 'api': setTestLayers(['api']); break;
-      case 'both': setTestLayers(['ui', 'api']); break;
-      default: setTestLayers(undefined); // global
-    }
+    setTestLayers(valueToTestLayers(value));
   };
 
   const isFolderMode = mode === 'folder';
@@ -140,19 +137,19 @@ const NodeForm: React.FC<NodeFormProps> = ({
     }
   };
 
-  // Dynamic labels based on mode
+  // Dynamic labels based on mode - using shared config
   const headerTitle = isEditing
-    ? (isFolderMode ? 'Edit Folder' : 'Edit Feature')
-    : (isFolderMode ? '📁 Create New Folder' : '➕ Create New Feature');
+    ? (isFolderMode ? formTitles.editFolder : formTitles.editFeature)
+    : (isFolderMode ? `📁 ${formTitles.createFolder}` : `➕ ${formTitles.createFeature}`);
 
-  const nameLabel = isFolderMode ? 'Folder Name *:' : 'Feature Name *:';
+  const nameLabel = isFolderMode ? 'Folder Name *:' : `${featureFormFields.title.label} *:`;
   const namePlaceholder = isFolderMode
     ? 'e.g., auth, user-management, api, utils'
-    : 'e.g., User Login, Shopping Cart, File Upload';
+    : featureFormFields.title.placeholder;
 
   const submitLabel = isEditing
-    ? (isFolderMode ? 'Update Folder' : 'Update Feature')
-    : (isFolderMode ? '📁 Create Folder' : 'Create New Feature');
+    ? (isFolderMode ? buttonLabels.updateFolder : buttonLabels.updateFeature)
+    : (isFolderMode ? `📁 ${buttonLabels.createFolder}` : buttonLabels.createFeature);
 
   return (
     <div className="node-form">
@@ -190,16 +187,14 @@ const NodeForm: React.FC<NodeFormProps> = ({
           {!isFolderMode && (
             <div className="node-form__section">
               <label className="node-form__label" htmlFor="feature-description">
-                Feature Description:
+                {featureFormFields.description.label}:
               </label>
               <textarea
                 id="feature-description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 className="node-form__textarea"
-                placeholder="Write a clear description of what this feature should accomplish. This will be used to generate the plan and test code.
-
-Example: As a user, I need to be able to log in with username and password. The system should validate credentials against the database and create a session."
+                placeholder={featureFormFields.description.placeholder}
                 rows={6}
               />
             </div>
@@ -210,7 +205,7 @@ Example: As a user, I need to be able to log in with username and password. The 
             <div className="node-form__section">
               <div className="node-form__docs-header">
                 <label className="node-form__label">
-                  📄 Context Files:
+                  📄 {featureFormFields.contextFiles.label}:
                 </label>
                 {onAddContextFiles && (
                   <button
@@ -255,7 +250,7 @@ Example: As a user, I need to be able to log in with username and password. The 
             <div className="node-form__section">
               <div className="node-form__docs-header">
                 <label className="node-form__label">
-                  🔗 Dependencies:
+                  🔗 {featureFormFields.dependencies.label}:
                 </label>
                 {onAddDependency && (
                   <button
@@ -299,7 +294,7 @@ Example: As a user, I need to be able to log in with username and password. The 
           {!isFolderMode && (
             <div className="node-form__section">
               <label className="node-form__label" htmlFor="test-layers">
-                🧪 Test Layers:
+                🧪 {featureFormFields.testLayers.label}:
               </label>
               <select
                 id="test-layers"
@@ -307,13 +302,12 @@ Example: As a user, I need to be able to log in with username and password. The 
                 onChange={(e) => handleTestLayerChange(e.target.value)}
                 className="node-form__input"
               >
-                <option value="global">Use Global Settings</option>
-                <option value="ui">UI Only</option>
-                <option value="api">API Only</option>
-                <option value="both">UI + API</option>
+                {testLayerOptions.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
               </select>
               <p className="node-form__hint">
-                Override global test settings for this specific feature.
+                {featureFormFields.testLayers.hint}
               </p>
             </div>
           )}
@@ -324,7 +318,7 @@ Example: As a user, I need to be able to log in with username and password. The 
               onClick={onCancel}
               className="node-form__button node-form__button--secondary"
             >
-              Cancel
+              {buttonLabels.cancel}
             </button>
             <button
               type="submit"

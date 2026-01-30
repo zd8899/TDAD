@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { TestResult } from '../../shared/types';
+import { AutomationProgressUpdate } from '../../shared/types/slack';
 import { logCanvas, logError } from '../../shared/utils/Logger';
 import { FeatureMapStorage } from '../../infrastructure/storage/FeatureMapStorage';
 import { SimpleNodeManager } from './SimpleNodeManager';
@@ -57,6 +58,9 @@ export class SimplifiedWorkflowCanvasProvider {
 
     // Store test results for each node
     private _testResultsCache: Map<string, TestResult[]> = new Map();
+
+    // Callback for sending automation progress to Slack
+    private _automationProgressCallback: ((update: AutomationProgressUpdate) => void) | null = null;
 
     public static createOrShow(extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
         const column = vscode.window.activeTextEditor?.viewColumn;
@@ -744,6 +748,16 @@ export class SimplifiedWorkflowCanvasProvider {
         this._automationHandlers.handleStopAutomation();
         this._testWorkflowHandlers.handleStopSingleNodeAutomation();
         this._testWorkflowHandlers.handleStopAllNodesAutomation();
+    }
+
+    /**
+     * Set callback for automation progress updates (used by Slack integration)
+     */
+    public setAutomationProgressCallback(callback: ((update: AutomationProgressUpdate) => void) | null): void {
+        this._automationProgressCallback = callback;
+        // Pass to handlers so they can call it
+        this._testWorkflowHandlers.setAutomationProgressCallback(callback);
+        logCanvas(`setAutomationProgressCallback: ${callback ? 'set' : 'cleared'}`);
     }
 
     /**

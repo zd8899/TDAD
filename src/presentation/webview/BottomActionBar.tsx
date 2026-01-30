@@ -183,13 +183,11 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
                         <span>{isAutopilotComingSoon() ? 'Coming Soon' : 'Auto-Pilot'}</span>
                     </button>
                     <button
-                        className={`bottom-action-bar__segment bottom-action-bar__segment--stop ${isRunningAutomation ? 'bottom-action-bar__segment--stop-active' : ''}`}
+                        className="bottom-action-bar__segment bottom-action-bar__segment--stop"
                         onClick={onStopAutomation}
-                        disabled={!isRunningAutomation}
                         title="Stop Auto-Pilot"
                     >
                         <span className="bottom-action-bar__icon">■</span>
-                        <span>Stop</span>
                     </button>
                 </div>
 

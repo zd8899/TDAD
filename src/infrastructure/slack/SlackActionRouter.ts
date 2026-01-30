@@ -15,7 +15,8 @@ import {
     buildAutoGeneratePlanModal,
     buildAutoGenerateTestsModal,
     buildTerminalModal,
-    buildRunOptionsModal
+    buildRunOptionsModal,
+    buildEditFeatureModal
 } from './SlackBlockBuilders';
 
 export interface ActiveAutomationThread {
@@ -88,6 +89,8 @@ export async function routeAction(
         await handleHomeRunFull(value, context, ctx);
     } else if (actionId === 'tdad_home_edit_plan') {
         await handleEditPlan(value, context, ctx);
+    } else if (actionId === 'tdad_home_edit_feature') {
+        await handleEditFeature(value, context, ctx);
     } else if (actionId === 'tdad_home_run_tests') {
         await handleHomeRunTests(value, context, ctx);
     }
@@ -124,6 +127,28 @@ async function handleEditPlan(nodeId: string, context: SlackMessageContext, ctx:
         logger.log('SLACK-CMD', `Opened Plan edit modal for ${node.title}`);
     } catch (error: any) {
         logger.error('SLACK-CMD', `openPlanEditModal failed: ${error.message}`, error);
+        await ctx.reply(context, `❌ Could not open edit dialog: ${error.message}`);
+    }
+}
+
+async function handleEditFeature(nodeId: string, context: SlackMessageContext, ctx: ActionRouterContext): Promise<void> {
+    const node = ctx.deps.getNodeById(nodeId);
+    if (!node) return;
+
+    logger.log('SLACK-CMD', `openEditFeatureModal: Opening for node ${node.title} (${node.id})`);
+
+    if (!context.triggerId) {
+        logger.error('SLACK-CMD', 'Cannot open modal: no trigger_id');
+        await ctx.reply(context, '❌ Cannot open edit dialog. Please try again.');
+        return;
+    }
+
+    try {
+        const modalView = buildEditFeatureModal(node, context.channelId);
+        await ctx.slackService.openModal(context.triggerId, modalView);
+        logger.log('SLACK-CMD', `Opened Edit Feature modal for ${node.title}`);
+    } catch (error: any) {
+        logger.error('SLACK-CMD', `openEditFeatureModal failed: ${error.message}`, error);
         await ctx.reply(context, `❌ Could not open edit dialog: ${error.message}`);
     }
 }

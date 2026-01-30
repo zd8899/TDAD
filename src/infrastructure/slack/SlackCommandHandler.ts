@@ -18,6 +18,7 @@ import {
     buildHomeTabFolderView,
     buildHomeTabNodeView
 } from './SlackBlockBuilders';
+import { valueToTestLayers } from '../../shared/config/featureFormConfig';
 
 // Re-export types for backward compatibility
 export type { AutomationStatus, SlackCommandDependencies } from '../../shared/types/slack';
@@ -289,6 +290,46 @@ export class SlackCommandHandler {
                         await this.slackService.sendMessage(
                             channelId,
                             `✅ Created folder: *${folderName}*`
+                        );
+                    } catch {
+                        // Ignore message send errors
+                    }
+                }
+            }
+        } else if (callbackId === 'tdad_edit_feature_modal') {
+            // Edit Feature modal - same fields as canvas NodeForm
+            const featureName = values['feature_name_input'];
+            const featureDescription = values['feature_description_input'] || '';
+            const testLayersValue = values['test_layers_input'] || 'global';
+
+            if (nodeId && featureName) {
+                const node = this.deps.getNodeById(nodeId);
+                if (!node) {
+                    logger.error('SLACK-CMD', `Node not found: ${nodeId}`);
+                    return;
+                }
+
+                // Update node with new values
+                node.title = featureName;
+                node.description = featureDescription;
+                (node as any).testLayers = valueToTestLayers(testLayersValue);
+
+                this.deps.updateNode(node);
+                logger.log('SLACK-CMD', `Updated feature via modal: ${featureName} (${nodeId})`);
+
+                // Refresh Home Tab if user is viewing this node
+                if (context.userId) {
+                    const currentView = this.getUserView(context.userId);
+                    if (currentView.type === 'node' && currentView.nodeId === nodeId) {
+                        await this.updateAppHome(context.userId);
+                    }
+                }
+
+                if (channelId) {
+                    try {
+                        await this.slackService.sendMessage(
+                            channelId,
+                            `✅ Updated feature: *${featureName}*`
                         );
                     } catch {
                         // Ignore message send errors
@@ -612,15 +653,47 @@ export class SlackCommandHandler {
                 }
             };
 
+            // Set up progress callback to send updates to thread
+            if (this.deps.setAutomationProgressCallback && channelId && threadTs) {
+                const progressChannelId = channelId;
+                const progressThreadTs = threadTs;
+                this.deps.setAutomationProgressCallback((update) => {
+                    // Format progress message based on status
+                    let message = '';
+                    if (update.status === 'running' && update.totalNodes !== undefined && update.currentIndex !== undefined) {
+                        const progress = `[${update.currentIndex + 1}/${update.totalNodes}]`;
+                        message = `⏳ ${progress} ${update.message}`;
+                    } else if (update.status === 'completed') {
+                        message = `✅ ${update.message}`;
+                        // Clear callback on completion
+                        this.deps.setAutomationProgressCallback?.(null);
+                    } else if (update.status === 'stopped') {
+                        message = `⏹️ ${update.message}`;
+                        this.deps.setAutomationProgressCallback?.(null);
+                    } else if (update.status === 'error') {
+                        message = `❌ ${update.message}`;
+                        this.deps.setAutomationProgressCallback?.(null);
+                    } else {
+                        message = update.message;
+                    }
+
+                    // Send async (fire and forget to avoid blocking automation)
+                    this.slackService.sendMessage(progressChannelId, message, progressThreadTs).catch(err => {
+                        logger.error('SLACK-CMD', `Failed to send progress: ${err.message}`);
+                    });
+                });
+                logger.log('SLACK-CMD', 'Set up automation progress callback for Slack thread');
+            }
+
             if (isFolder) {
                 // Running folder or all nodes
                 try {
                     await this.deps.runFolderNodes(folderId, modes);
                     logger.log('SLACK-CMD', `Started folder automation: ${targetName} with modes: ${modes.join(', ')}`);
-                    await notifyThread(`✅ Automation running for *${targetName}*`);
                 } catch (error: any) {
                     logger.error('SLACK-CMD', `Failed to run folder: ${error.message}`, error);
                     await notifyThread(`❌ Failed to start: ${error.message}`);
+                    this.deps.setAutomationProgressCallback?.(null);
                 }
             } else {
                 // Running single node
@@ -628,6 +701,7 @@ export class SlackCommandHandler {
                 if (!node) {
                     logger.error('SLACK-CMD', `Node not found: ${targetId}`);
                     await notifyThread(`❌ Node not found: ${targetId}`);
+                    this.deps.setAutomationProgressCallback?.(null);
                     return;
                 }
 
@@ -635,14 +709,15 @@ export class SlackCommandHandler {
                     const result = await this.deps.runSingleNode(targetId, modes);
                     if (result.started) {
                         logger.log('SLACK-CMD', `Started node automation: ${node.title} with modes: ${modes.join(', ')}`);
-                        await notifyThread(`✅ Automation running for *${node.title}*`);
                     } else {
                         logger.log('SLACK-CMD', `Node automation blocked: ${result.error}`);
                         await notifyThread(`⚠️ Could not start: ${result.error}`);
+                        this.deps.setAutomationProgressCallback?.(null);
                     }
                 } catch (error: any) {
                     logger.error('SLACK-CMD', `Failed to run node: ${error.message}`, error);
                     await notifyThread(`❌ Failed to start: ${error.message}`);
+                    this.deps.setAutomationProgressCallback?.(null);
                 }
             }
         }
