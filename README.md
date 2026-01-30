@@ -301,9 +301,23 @@ Build software from your phone. Start AI coding sessions, monitor progress, and 
 - **App Home Dashboard** - View all nodes, their status (Pending/Passing/Failing), and automation state
 - **Browse & Navigate** - Drill into folders and view node details
 - **Start Automation** - Run Plan, Test, or Run+Fix phases on any node or folder
+
+<p align="center">
+  <img src="media/slack-build-feature.gif" alt="Slack - Start Automation" width="600">
+</p>
+
 - **Real-time Updates** - Progress notifications in Slack threads as automation runs
 - **Edit Features** - Update node names, descriptions, and test layers via modals
+
+<p align="center">
+  <img src="media/slack-edit-feature.gif" alt="Slack - Edit Features" width="600">
+</p>
+
 - **Terminal Interaction** - Send messages to your CLI agent directly from Slack
+
+<p align="center">
+  <img src="media/slack-terminal.gif" alt="Slack - Terminal Interaction" width="600">
+</p>
 
 
 ---
