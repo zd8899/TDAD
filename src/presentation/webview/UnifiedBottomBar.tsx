@@ -23,7 +23,7 @@ interface UnifiedBottomBarProps {
     automationStatus?: 'idle' | 'running' | 'paused' | 'completed' | 'error';
     automationMessage?: string;
     onStartAutomation?: () => void;
-    onStopAutomation?: () => void;
+    onStopGlobalAutomation?: () => void;
     onCopyAgentPrompt?: () => void;
     // Run All Nodes automation
     isRunningAllNodes?: boolean;
@@ -108,7 +108,6 @@ export const UnifiedBottomBar: React.FC<UnifiedBottomBarProps> = (props) => {
                 onAddFolder={props.onAddFolder}
                 onOpenSettings={props.onOpenSettings}
                 onRefreshCanvas={props.onRefreshCanvas}
-                onOpenWaitlist={props.onOpenWaitlist}
                 onOpenBlueprintWizard={props.onOpenBlueprintWizard}
                 canUndo={props.canUndo}
                 canRedo={props.canRedo}
@@ -117,7 +116,7 @@ export const UnifiedBottomBar: React.FC<UnifiedBottomBarProps> = (props) => {
                 automationStatus={props.automationStatus}
                 automationMessage={props.automationMessage}
                 onStartAutomation={props.onStartAutomation}
-                onStopAutomation={props.onStopAutomation}
+                onStopAutomation={props.onStopGlobalAutomation}
                 onCopyAgentPrompt={props.onCopyAgentPrompt}
                 isRunningAllNodes={props.isRunningAllNodes}
                 allNodesProgress={props.allNodesProgress}

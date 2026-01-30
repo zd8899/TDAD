@@ -845,7 +845,7 @@ const CanvasApp: React.FC = () => {
               automationStatus={automationStatus}
               automationMessage={automationMessage}
               onStartAutomation={handleStartAutomation}
-              onStopAutomation={handleStopAutomation}
+              onStopGlobalAutomation={handleStopAutomation}
               onCopyAgentPrompt={handleCopyAgentPrompt}
               isRunningAllNodes={isRunningAllNodes}
               allNodesProgress={allNodesProgress}
