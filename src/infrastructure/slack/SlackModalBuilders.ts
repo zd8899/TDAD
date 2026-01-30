@@ -465,49 +465,6 @@ export function buildTerminalModal(channelId: string, output: string): any {
 }
 
 /**
- * Build Send to CLI modal view (legacy)
- */
-export function buildSendToCliModal(channelId?: string): any {
-    const metadata = JSON.stringify({ channelId: channelId || '' });
-    return {
-        type: 'modal',
-        callback_id: 'tdad_send_to_cli_modal',
-        private_metadata: metadata,
-        title: {
-            type: 'plain_text',
-            text: 'Send to Terminal'
-        },
-        submit: {
-            type: 'plain_text',
-            text: 'Send'
-        },
-        close: {
-            type: 'plain_text',
-            text: 'Cancel'
-        },
-        blocks: [
-            {
-                type: 'input',
-                block_id: 'message_block',
-                element: {
-                    type: 'plain_text_input',
-                    action_id: 'message_input',
-                    multiline: true,
-                    placeholder: {
-                        type: 'plain_text',
-                        text: 'Type your message to the AI agent...'
-                    }
-                },
-                label: {
-                    type: 'plain_text',
-                    text: 'Message'
-                }
-            }
-        ]
-    };
-}
-
-/**
  * Build Run Options modal
  */
 export function buildRunOptionsModal(targetId: string, targetName: string, isFolder: boolean, channelId?: string): any {

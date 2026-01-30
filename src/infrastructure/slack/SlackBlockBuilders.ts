@@ -27,7 +27,6 @@ export {
     buildAutoGeneratePlanModal,
     buildAutoGenerateTestsModal,
     buildTerminalModal,
-    buildSendToCliModal,
     buildRunOptionsModal,
     buildNodesBrowserModal,
     buildNodeDetailsModal
@@ -42,10 +41,7 @@ export {
     buildFolderContentsBlocks,
     buildStatusBlocks,
     buildProgressBlocks,
-    buildCliOutputBlocks,
-    buildTerminalPanelWithOutput,
     buildEditFileBlocks,
-    buildHelpBlocks,
     buildHomeTabBlocks
 } from './SlackViewBuilders';
 

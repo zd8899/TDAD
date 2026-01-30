@@ -71,14 +71,8 @@ export function buildHomeTabDashboard(
 
     blocks.push({
         type: 'section',
-        text: { type: 'mrkdwn', text: `*📂 Nodes* · ${totalNodes} total · ${passedCount} passed · ${failedCount} failed` },
-        accessory: {
-            type: 'button',
-            text: { type: 'plain_text', text: 'Browse All' },
-            action_id: 'tdad_home_browse',
-            value: 'root'
-        }
-    } as SlackBlock);
+        text: { type: 'mrkdwn', text: `*📂 Nodes* · ${totalNodes} total · ${passedCount} passed · ${failedCount} failed` }
+    });
 
     if (folders.length > 0) {
         blocks.push({
@@ -120,15 +114,13 @@ export function buildHomeTabDashboard(
         elements: [
             {
                 type: 'button',
-                text: { type: 'plain_text', text: 'Start Autopilot' },
-                style: 'primary',
+                text: { type: 'plain_text', text: '▶️ Start Autopilot' },
                 action_id: 'tdad_home_start_autopilot',
                 value: 'start'
             },
             {
                 type: 'button',
-                text: { type: 'plain_text', text: 'Stop Autopilot' },
-                style: 'danger',
+                text: { type: 'plain_text', text: '⏹️ Stop Autopilot' },
                 action_id: 'tdad_home_stop',
                 value: 'stop'
             },
@@ -201,14 +193,14 @@ export function buildHomeTabFolderView(
         const grandparent = parent?.parentId || null;
         navElements.push({
             type: 'button',
-            text: { type: 'plain_text', text: 'Back' },
+            text: { type: 'plain_text', text: '← Back' },
             action_id: 'tdad_home_back',
             value: grandparent || 'root'
         });
     }
     navElements.push({
         type: 'button',
-        text: { type: 'plain_text', text: 'Dashboard' },
+        text: { type: 'plain_text', text: '🏠 Dashboard' },
         action_id: 'tdad_home_dashboard',
         value: 'dashboard'
     });
@@ -350,13 +342,13 @@ export function buildHomeTabNodeView(
         elements: [
             {
                 type: 'button',
-                text: { type: 'plain_text', text: 'Back' },
+                text: { type: 'plain_text', text: '← Back' },
                 action_id: 'tdad_home_back_from_node',
                 value: node.parentId || 'root'
             },
             {
                 type: 'button',
-                text: { type: 'plain_text', text: 'Dashboard' },
+                text: { type: 'plain_text', text: '🏠 Dashboard' },
                 action_id: 'tdad_home_dashboard',
                 value: 'dashboard'
             }

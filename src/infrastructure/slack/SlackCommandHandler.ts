@@ -1,5 +1,5 @@
 /**
- * SlackCommandHandler - Routes Slack slash commands to TDAD functionality
+ * SlackCommandHandler - Routes Slack App Home actions to TDAD functionality
  * Sprint 15: Remote Control via Slack
  * Refactored: Split into multiple modules for maintainability
  */
@@ -12,7 +12,6 @@ import { CLIOutputWatcher } from './CLIOutputWatcher';
 import { routeAction, ActionRouterContext } from './SlackActionRouter';
 import {
     buildPlanViewBlocks,
-    buildTerminalPanelWithOutput,
     buildTerminalModal,
     buildHomeTabDashboard,
     buildHomeTabFolderView,
@@ -472,12 +471,13 @@ export class SlackCommandHandler {
                     await vscode.env.clipboard.writeText(message);
                     await vscode.commands.executeCommand('workbench.action.terminal.paste');
 
-                    // Send Enter to submit after paste completes
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                    await vscode.commands.executeCommand(
-                        'workbench.action.terminal.sendSequence',
-                        { text: '\r' }
-                    );
+                    // Send Enter to submit after paste completes (fire-and-forget to avoid interference)
+                    setTimeout(async () => {
+                        await vscode.commands.executeCommand(
+                            'workbench.action.terminal.sendSequence',
+                            { text: '\r' }
+                        );
+                    }, 100);
 
                     logger.log('SLACK-CMD', `Sent to terminal from modal: ${message}`);
                     statusMessage = `Sent: ${message}`;
@@ -498,92 +498,6 @@ export class SlackCommandHandler {
 
             // Return updated modal view to keep it open
             return buildTerminalModal(channelId, displayOutput);
-        } else if (callbackId === 'tdad_send_to_cli_modal') {
-            const message = values['message_input'];
-            const method = values['method_input'] || 'clipboard_paste'; // Default to clipboard (most reliable)
-
-            if (message) {
-                const terminal = vscode.window.terminals.find(t => t.name === 'TDAD Agent');
-                if (terminal) {
-                    terminal.show(false);
-
-                    // Build the sequence based on selected method
-                    let sequence = message;
-                    let useClipboard = false;
-
-                    switch (method) {
-                        case 'clipboard_paste':
-                            useClipboard = true;
-                            // We don't use sequence for clipboard paste, we use the clipboard
-                            break;
-                        case 'shift2_enter2':
-                            // Shift+Enter x2 (newlines), Enter x2 (submit)
-                            // \n = newline (like Shift+Enter), \r = carriage return (Enter)
-                            sequence = message + '\n\n\r\r';
-                            break;
-                        case 'enter':
-                            // Just Enter
-                            sequence = message + '\r';
-                            break;
-                        case 'ctrl_d':
-                            // Ctrl+D (EOF)
-                            sequence = message + '\x04';
-                            break;
-                        case 'enter2':
-                            // Enter x2
-                            sequence = message + '\r\r';
-                            break;
-                        default:
-                            sequence = message + '\n\n\r\r';
-                    }
-
-                    if (useClipboard) {
-                        // Clipboard Paste Strategy
-                        // 1. Write to clipboard
-                        await vscode.env.clipboard.writeText(message);
-
-                        // 2. Paste
-                        await vscode.commands.executeCommand('workbench.action.terminal.paste');
-
-                        // 3. Send Enter to submit (wait a tiny bit for paste to complete)
-                        setTimeout(async () => {
-                            await vscode.commands.executeCommand(
-                                'workbench.action.terminal.sendSequence',
-                                { text: '\r' }
-                            );
-                        }, 100);
-
-                        logger.log('SLACK-CMD', `Sent to terminal (clipboard): ${message}`);
-                    } else {
-                        await vscode.commands.executeCommand(
-                            'workbench.action.terminal.sendSequence',
-                            { text: sequence }
-                        );
-
-                        // Debug logging for sequence
-                        const debugSequence = sequence
-                            .replace(/\n/g, '[LF]')
-                            .replace(/\r/g, '[CR]')
-                            .replace(/\x04/g, '[EOF]');
-                        logger.log('SLACK-CMD', `Sent to terminal (${method}): ${message} | Sequence: ${debugSequence}`);
-                    }
-
-                    if (channelId) {
-                        try {
-                            const blocks = buildTerminalPanelWithOutput(`Sent: \`${message}\``);
-                            await this.slackService.sendBlockMessage(channelId, 'Terminal', blocks);
-                        } catch { /* ignore */ }
-                    }
-                } else {
-                    logger.log('SLACK-CMD', 'No TDAD Agent terminal found');
-                    if (channelId) {
-                        try {
-                            const blocks = buildTerminalPanelWithOutput('No active terminal found. Start automation first.');
-                            await this.slackService.sendBlockMessage(channelId, 'Terminal', blocks);
-                        } catch { /* ignore */ }
-                    }
-                }
-            }
         } else if (callbackId === 'tdad_run_options_modal') {
             // Run options modal - user selected which phases to run (unified UX with canvas)
             const selectedModes = values['modes_input'] as string[] || [];

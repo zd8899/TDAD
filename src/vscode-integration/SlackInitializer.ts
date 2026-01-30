@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { logExtension, logError } from '../shared/utils/Logger';
 import { filterTranscriptNoise } from '../shared/utils/PowerShellTranscriptFilter';
-import { SlackService, SlackCommandHandler, SlackCommandDependencies, buildHelpBlocks } from '../infrastructure/slack';
+import { SlackService, SlackCommandHandler, SlackCommandDependencies } from '../infrastructure/slack';
 import { CLIAgentLauncher } from './CLIAgentLauncher';
 import { SimplifiedWorkflowCanvasProvider } from './providers/SimplifiedWorkflowCanvasProvider';
 import { FeatureMapStorage } from '../infrastructure/storage/FeatureMapStorage';
@@ -241,14 +241,6 @@ export async function connectSlack(
     // Set up command handler
     const deps = createSlackCommandDependencies(workspacePath);
     state.commandHandler = new SlackCommandHandler(state.service, deps);
-
-    // Register slash command handler
-    state.service.onSlashCommand(async () => {
-        return {
-            text: 'TDAD Commands',
-            blocks: buildHelpBlocks()
-        };
-    });
 
     logExtension('Slack command handler initialized');
 }

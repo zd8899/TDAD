@@ -476,68 +476,6 @@ export function buildProgressBlocks(
 }
 
 /**
- * Build Terminal control panel
- */
-export function buildCliOutputBlocks(_output?: string | null): SlackBlock[] {
-    return buildTerminalPanelWithOutput();
-}
-
-/**
- * Build Terminal panel with optional output/status message
- */
-export function buildTerminalPanelWithOutput(output?: string): SlackBlock[] {
-    const blocks: SlackBlock[] = [
-        {
-            type: 'section',
-            text: {
-                type: 'mrkdwn',
-                text: '*Terminal*\nControl the AI agent running in VS Code'
-            }
-        }
-    ];
-
-    if (output) {
-        blocks.push({
-            type: 'section',
-            text: { type: 'mrkdwn', text: output }
-        });
-    }
-
-    blocks.push({
-        type: 'actions',
-        elements: [
-            {
-                type: 'button',
-                text: { type: 'plain_text', text: 'See Output' },
-                action_id: 'tdad_cmd_snapshot',
-                value: 'snapshot'
-            },
-            {
-                type: 'button',
-                text: { type: 'plain_text', text: 'Send Message' },
-                action_id: 'tdad_send_to_cli',
-                value: 'send'
-            },
-            {
-                type: 'button',
-                text: { type: 'plain_text', text: 'Stop Agent' },
-                action_id: 'tdad_cmd_stop',
-                value: 'stop',
-                style: 'danger'
-            },
-            {
-                type: 'button',
-                text: { type: 'plain_text', text: 'Back' },
-                action_id: 'tdad_cmd_help',
-                value: 'help'
-            }
-        ]
-    });
-
-    return blocks;
-}
-
-/**
  * Build edit file response with back to node button
  */
 export function buildEditFileBlocks(nodeId: string, nodeTitle: string, fileType: 'action' | 'test', filePath: string | null): SlackBlock[] {
@@ -561,53 +499,6 @@ export function buildEditFileBlocks(nodeId: string, nodeTitle: string, fileType:
                     text: { type: 'plain_text', text: 'Back' },
                     action_id: 'tdad_select_node',
                     value: nodeId
-                }
-            ]
-        }
-    ];
-}
-
-/**
- * Build help blocks - simplified to guide users to Home Tab
- */
-export function buildHelpBlocks(): SlackBlock[] {
-    return [
-        {
-            type: 'header',
-            text: { type: 'plain_text', text: '🚀 TDAD' }
-        },
-        {
-            type: 'section',
-            text: {
-                type: 'mrkdwn',
-                text: '*Use the Home Tab for full functionality*\n\nClick the *TDAD* app in your sidebar to access the dashboard with:\n• Node browser and management\n• Autopilot controls\n• Status and progress\n• All automation actions'
-            }
-        },
-        { type: 'divider' } as SlackBlock,
-        {
-            type: 'section',
-            text: { type: 'mrkdwn', text: '*Quick Actions* _(for channel notifications)_' }
-        },
-        {
-            type: 'actions',
-            elements: [
-                {
-                    type: 'button',
-                    text: { type: 'plain_text', text: 'Browse Nodes' },
-                    action_id: 'tdad_cmd_nodes',
-                    value: 'nodes'
-                },
-                {
-                    type: 'button',
-                    text: { type: 'plain_text', text: 'Status' },
-                    action_id: 'tdad_cmd_status',
-                    value: 'status'
-                },
-                {
-                    type: 'button',
-                    text: { type: 'plain_text', text: 'Join Channel' },
-                    action_id: 'tdad_join_channel',
-                    value: 'join'
                 }
             ]
         }

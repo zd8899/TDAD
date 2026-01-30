@@ -10,8 +10,7 @@ import { SlackMessageContext } from '../../shared/types/slack';
 type MessageCallback = (text: string, context: SlackMessageContext) => Promise<void>;
 type ActionCallback = (actionId: string, value: string, context: SlackMessageContext) => Promise<void>;
 type ViewSubmissionCallback = (callbackId: string, values: Record<string, any>, privateMetadata: string, context: SlackMessageContext) => Promise<any | void>;
-    type SlashCommandCallback = (context: SlackMessageContext) => Promise<{ text: string; blocks: any[] }>;
-    type AppHomeOpenedCallback = (context: SlackMessageContext) => Promise<void>;
+type AppHomeOpenedCallback = (context: SlackMessageContext) => Promise<void>;
     
     export class SlackService {
         private app: App | null = null;
@@ -20,7 +19,6 @@ type ViewSubmissionCallback = (callbackId: string, values: Record<string, any>, 
         private messageCallback: MessageCallback | null = null;
         private actionCallback: ActionCallback | null = null;
         private viewSubmissionCallback: ViewSubmissionCallback | null = null;
-        private slashCommandCallback: SlashCommandCallback | null = null;
         private appHomeOpenedCallback: AppHomeOpenedCallback | null = null;
 
     private constructor() {}
@@ -57,40 +55,6 @@ type ViewSubmissionCallback = (callbackId: string, values: Record<string, any>, 
                     };
 
                     await this.messageCallback(message.text, context);
-                }
-            });
-
-            // Register /tdad slash command - always shows help panel with buttons
-            this.app.command('/tdad', async ({ command, ack, respond }) => {
-                try {
-                    await ack();
-                    logger.log('SLACK', `/tdad command received from ${command.user_name}`);
-
-                    if (this.slashCommandCallback) {
-                        const context: SlackMessageContext = {
-                            channelId: command.channel_id,
-                            userId: command.user_id
-                        };
-
-                        // Use respond() for ephemeral messages instead of waiting for a full return
-                        // This prevents timeout if the handler is slow
-                        const response = await this.slashCommandCallback(context);
-                        
-                        if (response) {
-                            await respond({
-                                text: response.text,
-                                blocks: response.blocks,
-                                response_type: 'in_channel'
-                            });
-                        }
-                    } else {
-                        await respond({
-                            text: 'TDAD is connected but no command handler is configured.',
-                            response_type: 'ephemeral'
-                        });
-                    }
-                } catch (error: any) {
-                    logger.error('SLACK', `/tdad command failed: ${error.message}`, error);
                 }
             });
 
@@ -252,10 +216,6 @@ type ViewSubmissionCallback = (callbackId: string, values: Record<string, any>, 
 
     public onViewSubmission(callback: ViewSubmissionCallback): void {
         this.viewSubmissionCallback = callback;
-    }
-
-    public onSlashCommand(callback: SlashCommandCallback): void {
-        this.slashCommandCallback = callback;
     }
 
     public onAppHomeOpened(callback: AppHomeOpenedCallback): void {
