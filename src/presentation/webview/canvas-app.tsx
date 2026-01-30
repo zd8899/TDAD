@@ -641,6 +641,18 @@ const CanvasApp: React.FC = () => {
     }
   }, [nodeActionsState.isRunningAutomation, postMessage, handleShowSingleNodeDialog]);
 
+  // Separate handler for starting single node automation
+  const handleStartSingleNodeAutomation = useCallback(() => {
+    if (!nodeActionsState.isRunningAutomation) {
+      handleShowSingleNodeDialog();
+    }
+  }, [nodeActionsState.isRunningAutomation, handleShowSingleNodeDialog]);
+
+  // Separate handler for stopping single node automation
+  const handleStopSingleNodeAutomation = useCallback(() => {
+    postMessage({ command: 'stopSingleNodeAutomation' });
+  }, [postMessage]);
+
   // Autopilot dialog handlers
   const handleAutopilotConfirm = useCallback((modes: AutopilotModes, maxRetries: number) => {
     setAutopilotDialogOpen(false);
@@ -857,7 +869,8 @@ const CanvasApp: React.FC = () => {
               onCopyTestGeneration={nodeActionsHandlers.handleGenerateTestCode}
               onRunTest={nodeActionsHandlers.handleRunTest}
               onCopyGoldenPacket={nodeActionsHandlers.handleCopyGoldenPacket}
-              onRunAutomation={handleToggleSingleNodeAutomation}
+              onRunAutomation={handleStartSingleNodeAutomation}
+              onStopAutomation={handleStopSingleNodeAutomation}
               onOpenFile={nodeActionsHandlers.handleOpenFile}
               onOpenTestDetails={() => setShowTestDetailsDialog(true)}
               onOpenBddEditor={() => setShowBddEditor(true)}

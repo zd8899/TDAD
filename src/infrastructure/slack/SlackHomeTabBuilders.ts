@@ -127,6 +127,13 @@ export function buildHomeTabDashboard(
             },
             {
                 type: 'button',
+                text: { type: 'plain_text', text: 'Stop Autopilot' },
+                style: 'danger',
+                action_id: 'tdad_home_stop',
+                value: 'stop'
+            },
+            {
+                type: 'button',
                 text: { type: 'plain_text', text: 'Terminal' },
                 action_id: 'tdad_cmd_cli',
                 value: 'cli'
@@ -135,12 +142,6 @@ export function buildHomeTabDashboard(
                 type: 'button',
                 text: { type: 'plain_text', text: 'Add Node' },
                 action_id: 'tdad_home_add_node',
-                value: 'root'
-            },
-            {
-                type: 'button',
-                text: { type: 'plain_text', text: 'Add Folder' },
-                action_id: 'tdad_home_add_folder',
                 value: 'root'
             }
         ]

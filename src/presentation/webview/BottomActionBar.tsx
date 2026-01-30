@@ -32,6 +32,7 @@ interface BottomActionBarProps {
     onRunTest: () => void;
     onCopyGoldenPacket: () => void;
     onRunAutomation: () => void;
+    onStopAutomation: () => void;
     onOpenFile: (filePath: string) => void;
     onOpenTestDetails: () => void;
     onOpenBddEditor: () => void;
@@ -57,6 +58,7 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
     onRunTest,
     onCopyGoldenPacket,
     onRunAutomation,
+    onStopAutomation,
     onOpenTestDetails,
     onOpenBddEditor,
     onOpenWaitlist,
@@ -163,23 +165,31 @@ const BottomActionBar: React.FC<BottomActionBarProps> = ({
 
             {/* Horizontal container for action buttons */}
             <div className="bottom-action-bar__row">
-                {/* Auto Run - Separate pill (toggle: click to start/stop) */}
+                {/* Auto Run - Separate pill with Start and Stop buttons */}
                 <div className="bottom-action-bar__auto-container">
                     <button
-                        className={`bottom-action-bar__segment bottom-action-bar__segment--auto ${isRunningAutomation ? 'bottom-action-bar__segment--active' : ''} ${isAutopilotComingSoon() ? 'bottom-action-bar__segment--coming-soon' : ''}`}
+                        className={`bottom-action-bar__segment bottom-action-bar__segment--auto ${isRunningAutomation ? 'bottom-action-bar__segment--disabled-running' : ''} ${isAutopilotComingSoon() ? 'bottom-action-bar__segment--coming-soon' : ''}`}
                         onClick={() => {
                             if (isAutopilotComingSoon()) {
                                 onOpenWaitlist?.();
-                            } else {
+                            } else if (!isRunningAutomation) {
                                 onRunAutomation();
                             }
                         }}
-                        title={isAutopilotComingSoon() ? 'Coming Soon - Click to join waitlist!' : (isRunningAutomation ? 'Stop Auto-Pilot' : 'Engage Auto-Pilot: Hands-free Plan → Test → Fix loop')}
+                        disabled={isRunningAutomation && !isAutopilotComingSoon()}
+                        title={isAutopilotComingSoon() ? 'Coming Soon - Click to join waitlist!' : 'Engage Auto-Pilot: Hands-free Plan → Test → Fix loop'}
                     >
-                        <span className="bottom-action-bar__icon">
-                            {isAutopilotComingSoon() ? '✈' : (isRunningAutomation ? '■' : '✈')}
-                        </span>
-                        <span>{isAutopilotComingSoon() ? 'Coming Soon' : (isRunningAutomation ? 'Stop' : 'Auto-Pilot')}</span>
+                        <span className="bottom-action-bar__icon">✈</span>
+                        <span>{isAutopilotComingSoon() ? 'Coming Soon' : 'Auto-Pilot'}</span>
+                    </button>
+                    <button
+                        className={`bottom-action-bar__segment bottom-action-bar__segment--stop ${isRunningAutomation ? 'bottom-action-bar__segment--stop-active' : ''}`}
+                        onClick={onStopAutomation}
+                        disabled={!isRunningAutomation}
+                        title="Stop Auto-Pilot"
+                    >
+                        <span className="bottom-action-bar__icon">■</span>
+                        <span>Stop</span>
                     </button>
                 </div>
 

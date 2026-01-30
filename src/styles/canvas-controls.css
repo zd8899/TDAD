@@ -85,6 +85,54 @@
     50% { box-shadow: 0 4px 24px rgba(217, 119, 6, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2); }
 }
 
+/* Stop Button - Always visible, muted when not running */
+.canvas-controls__segment--stop {
+    background: rgba(0, 0, 0, 0.06);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    color: #888888;
+    box-shadow: none;
+    margin-left: 4px;
+}
+
+.canvas-controls__segment--stop:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.canvas-controls__segment--stop:hover:not(:disabled) {
+    background: rgba(220, 38, 38, 0.1);
+    border-color: rgba(220, 38, 38, 0.3);
+    color: #dc2626;
+}
+
+/* Stop Button Active - Red danger style when running */
+.canvas-controls__segment--stop-active {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    border: 1px solid rgba(239, 68, 68, 0.5);
+    color: #ffffff;
+    box-shadow: 0 4px 16px rgba(220, 38, 38, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    animation: stop-pulse 1.5s ease-in-out infinite;
+}
+
+.canvas-controls__segment--stop-active:hover:not(:disabled) {
+    background: linear-gradient(135deg, #f87171 0%, #ef4444 100%);
+    box-shadow: 0 6px 20px rgba(220, 38, 38, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.3);
+    transform: translateY(-2px);
+}
+
+@keyframes stop-pulse {
+    0%, 100% { box-shadow: 0 4px 16px rgba(220, 38, 38, 0.4); }
+    50% { box-shadow: 0 4px 24px rgba(220, 38, 38, 0.7); }
+}
+
+/* Auto button disabled when running */
+.canvas-controls__segment--disabled-running {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 /* Coming Soon variant - Muted purple/gray with lock icon */
 .canvas-controls__segment--coming-soon {
     background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);

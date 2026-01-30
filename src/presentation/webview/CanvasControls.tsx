@@ -44,27 +44,36 @@ const CanvasControls: React.FC<CanvasControlsProps> = ({
   onOpenFeedback
 }) => {
   const handleAutopilotClick = () => {
-    if (isRunningAllNodes) {
-      onStopAllNodes?.();
-    } else {
+    if (!isRunningAllNodes) {
       onRunAllNodes?.();
     }
   };
 
+  const handleStopClick = () => {
+    onStopAllNodes?.();
+  };
+
   return (
     <div className="canvas-controls__row">
-      {/* Run All Nodes - Separate pill on the left */}
+      {/* Run All Nodes - Separate pill on the left with Start and Stop buttons */}
       <div className="canvas-controls__auto-container">
         <button
           onClick={handleAutopilotClick}
-          className={`canvas-controls__segment canvas-controls__segment--auto ${isRunningAllNodes ? 'canvas-controls__segment--active' : ''}`}
-          disabled={isRunningAllNodes && !onStopAllNodes}
-          title={isRunningAllNodes ? `Stop Auto-Pilot (${allNodesProgress || 'running...'})` : 'Engage Auto-Pilot for all pending nodes'}
+          className={`canvas-controls__segment canvas-controls__segment--auto ${isRunningAllNodes ? 'canvas-controls__segment--disabled-running' : ''}`}
+          disabled={isRunningAllNodes}
+          title="Engage Auto-Pilot for all pending nodes"
         >
-          <span className="canvas-controls__icon">
-            {isRunningAllNodes ? '■' : '✈'}
-          </span>
+          <span className="canvas-controls__icon">✈</span>
           <span>Auto-Pilot All</span>
+        </button>
+        <button
+          onClick={handleStopClick}
+          className={`canvas-controls__segment canvas-controls__segment--stop ${isRunningAllNodes ? 'canvas-controls__segment--stop-active' : ''}`}
+          disabled={!isRunningAllNodes}
+          title={isRunningAllNodes ? `Stop Auto-Pilot (${allNodesProgress || 'running...'})` : 'Stop Auto-Pilot'}
+        >
+          <span className="canvas-controls__icon">■</span>
+          <span>Stop</span>
         </button>
       </div>
 

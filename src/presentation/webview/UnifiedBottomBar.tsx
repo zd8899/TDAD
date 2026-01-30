@@ -49,6 +49,7 @@ interface UnifiedBottomBarProps {
     onRunTest: () => void;
     onCopyGoldenPacket: () => void;
     onRunAutomation: () => void;
+    onStopAutomation: () => void;
     onOpenFile: (filePath: string) => void;
     onOpenTestDetails: () => void;
     onOpenBddEditor: () => void;
@@ -82,6 +83,7 @@ export const UnifiedBottomBar: React.FC<UnifiedBottomBarProps> = (props) => {
                 onRunTest={props.onRunTest}
                 onCopyGoldenPacket={props.onCopyGoldenPacket}
                 onRunAutomation={props.onRunAutomation}
+                onStopAutomation={props.onStopAutomation}
                 onOpenFile={props.onOpenFile}
                 onOpenTestDetails={props.onOpenTestDetails}
                 onOpenBddEditor={props.onOpenBddEditor}
