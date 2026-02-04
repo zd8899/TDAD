@@ -206,6 +206,10 @@ export class NodeAutomationHandlers {
                     logCanvas(`Single-node automation complete: ${completedNodeId} - ${passed ? 'PASSED' : 'FAILED'} (modes: ${modes.join(', ')})`);
                     this.checkSingleNodeFileStatus(completedNodeId);
 
+                    // Clear CLI overrides after automation completes
+                    const launcher = CLIAgentLauncher.getInstance(workspaceRoot);
+                    launcher.clearCliOverrides();
+
                     const completedNode = this.nodeManager.getNodeById(completedNodeId);
                     if (completedNode) {
                         (completedNode as any).status = passed ? 'passed' : 'failed';
@@ -494,6 +498,11 @@ export class NodeAutomationHandlers {
 
             const completedMessage = `Completed: ${passedCount}/${completedCount} passed`;
             logCanvas(`All-nodes automation complete: ${passedCount}/${completedCount} passed`);
+
+            // Clear CLI overrides after all-nodes automation completes
+            const launcher = CLIAgentLauncher.getInstance(workspaceRoot);
+            launcher.clearCliOverrides();
+
             this.webview.postMessage({
                 command: 'allNodesAutomationStatus',
                 status: 'completed',

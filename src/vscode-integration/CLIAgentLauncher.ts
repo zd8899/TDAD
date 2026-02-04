@@ -40,12 +40,18 @@ export interface CLIAgentConfig {
     permissionFlags: CLIPermissionFlags;
 }
 
+export interface CLIOverrides {
+    preset: string;
+    skipPermissions: boolean;
+}
+
 export class CLIAgentLauncher {
     private static instance: CLIAgentLauncher | null = null;
     private terminal: vscode.Terminal | null = null;
     private readonly terminalName = 'TDAD Agent';
     private workspacePath: string;
     private slackOutputEnabled: boolean = false;
+    private cliOverrides: CLIOverrides | null = null;
 
     private constructor(workspacePath: string) {
         this.workspacePath = workspacePath;
@@ -100,16 +106,59 @@ export class CLIAgentLauncher {
     }
 
     /**
-     * Get configuration from VS Code settings
+     * Set CLI overrides for the next automation run
+     * These override the saved settings temporarily
+     */
+    public setCliOverrides(overrides: CLIOverrides | null): void {
+        this.cliOverrides = overrides;
+        logger.log('CLI-AGENT-LAUNCHER', `CLI overrides set: ${overrides ? JSON.stringify(overrides) : 'cleared'}`);
+    }
+
+    /**
+     * Clear CLI overrides
+     */
+    public clearCliOverrides(): void {
+        this.cliOverrides = null;
+    }
+
+    /**
+     * Get configuration from VS Code settings, with optional overrides applied
      */
     public getConfig(): CLIAgentConfig {
         const config = vscode.workspace.getConfiguration('tdad');
         const savedFlags = config.get<CLIPermissionFlags>('agent.cli.permissionFlags');
-        return {
+
+        let baseConfig: CLIAgentConfig = {
             enabled: config.get('agent.cli.enabled', true),
             command: config.get('agent.cli.command', 'claude "Read .tdad/NEXT_TASK.md and execute the task. When done, write DONE to .tdad/AGENT_DONE.md"'),
-            permissionFlags: savedFlags ? { ...DEFAULT_PERMISSION_FLAGS, ...savedFlags } : DEFAULT_PERMISSION_FLAGS
+            permissionFlags: savedFlags ? { ...DEFAULT_PERMISSION_FLAGS, ...savedFlags } : { ...DEFAULT_PERMISSION_FLAGS }
         };
+
+        // Apply overrides if set
+        if (this.cliOverrides) {
+            const presetCommands: Record<string, string> = {
+                'claude': 'claude "Read .tdad/NEXT_TASK.md and execute the task. When done, write DONE to .tdad/AGENT_DONE.md"',
+                'aider': 'aider --message "{prompt}"',
+                'codex': 'codex "{prompt}"'
+            };
+
+            // Override command based on preset
+            if (this.cliOverrides.preset !== 'custom' && presetCommands[this.cliOverrides.preset]) {
+                baseConfig.command = presetCommands[this.cliOverrides.preset];
+            }
+
+            // Override skip permissions for Claude
+            if (this.cliOverrides.preset === 'claude') {
+                baseConfig.permissionFlags = {
+                    ...baseConfig.permissionFlags,
+                    claude: { dangerouslySkipPermissions: this.cliOverrides.skipPermissions }
+                };
+            }
+
+            logger.log('CLI-AGENT-LAUNCHER', `Applied overrides: preset=${this.cliOverrides.preset}, skipPermissions=${this.cliOverrides.skipPermissions}`);
+        }
+
+        return baseConfig;
     }
 
     /**

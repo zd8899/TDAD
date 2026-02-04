@@ -654,7 +654,7 @@ const CanvasApp: React.FC = () => {
   }, [postMessage]);
 
   // Autopilot dialog handlers
-  const handleAutopilotConfirm = useCallback((modes: AutopilotModes, maxRetries: number) => {
+  const handleAutopilotConfirm = useCallback((modes: AutopilotModes, maxRetries: number, cliOverrides?: { preset: string; skipPermissions: boolean }) => {
     setAutopilotDialogOpen(false);
 
     if (autopilotIsSingleNode && selectedNode) {
@@ -663,7 +663,8 @@ const CanvasApp: React.FC = () => {
         command: 'runSingleNodeAutomation',
         nodeId: selectedNode.id,
         modes,
-        maxRetries
+        maxRetries,
+        cliOverrides
       });
     } else {
       // All nodes automation
@@ -674,7 +675,8 @@ const CanvasApp: React.FC = () => {
         confirmed: true,
         allFolders: autopilotIsAllFolders,
         modes,
-        maxRetries
+        maxRetries,
+        cliOverrides
       });
     }
   }, [postMessage, autopilotIsSingleNode, autopilotIsAllFolders, selectedNode]);
@@ -1046,6 +1048,7 @@ const CanvasApp: React.FC = () => {
             isAllFolders={autopilotIsAllFolders}
             isSingleNode={autopilotIsSingleNode}
             nodeName={autopilotNodeName}
+            cliSettings={settingsData?.cliSettings}
             onConfirm={handleAutopilotConfirm}
             onCancel={handleAutopilotCancel}
             onOpenSettings={() => {
