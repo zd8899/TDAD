@@ -2,13 +2,27 @@
 **CRITICAL:** You are building a **TDAD Dependency Graph**, NOT a standard React app.
 
 ## Rules
-1. **Node = Single Problem:** Each feature node solves ONE specific problem with ONE clear outcome. NOT generic features.
-   - ✅ GOOD: "validate-email", "hash-password", "create-user-record", "send-verification-email"
-   - ❌ BAD: "authentication", "user-management", "handle-forms"
+1. **Node = Testable Behavior:** Each node is a small, testable piece of functionality that can be verified with BDD scenarios and Playwright tests.
+   - ✅ GOOD: "validate-email", "hash-password", "create-user-record", "display-error-message"
+   - ❌ BAD: "authentication", "user-management", "handle-forms" (too generic)
+   - ❌ BAD: "install-sdk", "setup-database", "configure-env" (not testable - these are prerequisites, not features)
 2. **JSON Only:** Write `.workflow.json` files ONLY. NO `.js` or `.tsx` files. System auto-generates code from JSON.
 3. **DAG Dependencies:** Features connect via Artifacts. Node B needs Node A's data → A is dependency of B. NO circular deps.
 4. **Failure Mode:** If you generate `src/components/Button.tsx` → you have FAILED. Only generate `.tdad/workflows/` files.
 5. **Granularity Test:** If a node description contains "and" or multiple verbs → split into separate nodes.
+
+---
+
+## What is NOT a Node
+
+**DO NOT create nodes for:**
+- Package installation (`npm install X`) → Document in README
+- Environment setup (`configure .env`) → Document in README
+- Infrastructure (`setup database connection`) → Document in README
+- Build configuration (`webpack config`) → Document in README
+- Manual steps (`get API key from console`) → Document in README
+
+**Nodes are ONLY for testable application behaviors** - things you can write a Playwright test for.
 
 ---
 
@@ -128,13 +142,24 @@ Contains **ALL feature nodes** for this folder:
   "version": "1.0",
   "nodes": [
     {
-      "id": "validate-email",
+      "id": "validate-email-format",
       "workflowId": "auth",
-      "title": "Validate Email",
-      "description": "Check email format and uniqueness in database",
+      "title": "Validate Email Format",
+      "description": "When user enters email in registration form, validate format using regex pattern. Success: shows green checkmark. Failure: shows 'Invalid email format' error below input.",
       "nodeType": "feature",
-      "fileName": "validate-email",
+      "fileName": "validate-email-format",
       "position": { "x": 100, "y": 100 },
+      "dependencies": [],
+      "testLayers": ["ui"]
+    },
+    {
+      "id": "check-email-uniqueness",
+      "workflowId": "auth",
+      "title": "Check Email Uniqueness",
+      "description": "POST /api/auth/check-email with {email}. Returns {available: true} if email not in database, {available: false, error: 'Email already registered'} if exists.",
+      "nodeType": "feature",
+      "fileName": "check-email-uniqueness",
+      "position": { "x": 300, "y": 100 },
       "dependencies": [],
       "testLayers": ["api"]
     },
@@ -142,10 +167,10 @@ Contains **ALL feature nodes** for this folder:
       "id": "hash-password",
       "workflowId": "auth",
       "title": "Hash Password",
-      "description": "Hash password using bcrypt with salt",
+      "description": "Hash plaintext password using bcrypt with 10 salt rounds. Input: plaintext string. Output: hashed string starting with '$2b$'.",
       "nodeType": "feature",
       "fileName": "hash-password",
-      "position": { "x": 300, "y": 100 },
+      "position": { "x": 500, "y": 100 },
       "dependencies": [],
       "testLayers": ["api"]
     },
@@ -153,28 +178,29 @@ Contains **ALL feature nodes** for this folder:
       "id": "create-user-record",
       "workflowId": "auth",
       "title": "Create User Record",
-      "description": "Insert new user into database with validated data",
+      "description": "POST /api/users with {email, hashedPassword}. Inserts row into users table. Returns {id, email, createdAt} on success. Returns 400 with {error: 'Email already exists'} if duplicate.",
       "nodeType": "feature",
       "fileName": "create-user-record",
-      "position": { "x": 200, "y": 250 },
-      "dependencies": ["validate-email", "hash-password"],
+      "position": { "x": 300, "y": 250 },
+      "dependencies": ["check-email-uniqueness", "hash-password"],
       "testLayers": ["api"]
     },
     {
-      "id": "show-login-form",
+      "id": "show-registration-success",
       "workflowId": "auth",
-      "title": "Show Login Form",
-      "description": "Render login form with email and password fields",
+      "title": "Show Registration Success",
+      "description": "After successful user creation, display success message 'Account created! Please check your email.' and show link to login page.",
       "nodeType": "feature",
-      "fileName": "show-login-form",
-      "position": { "x": 400, "y": 100 },
-      "dependencies": [],
+      "fileName": "show-registration-success",
+      "position": { "x": 300, "y": 400 },
+      "dependencies": ["create-user-record"],
       "testLayers": ["ui"]
     }
   ],
   "edges": [
-    { "id": "email-to-user", "source": "validate-email", "target": "create-user-record" },
-    { "id": "hash-to-user", "source": "hash-password", "target": "create-user-record" }
+    { "id": "email-to-user", "source": "check-email-uniqueness", "target": "create-user-record" },
+    { "id": "hash-to-user", "source": "hash-password", "target": "create-user-record" },
+    { "id": "user-to-success", "source": "create-user-record", "target": "show-registration-success" }
   ]
 }
 ```
@@ -188,17 +214,71 @@ Contains **ALL feature nodes** for this folder:
 | `id` | ✅ | Unique kebab-case verb-noun (e.g., `validate-email`, `create-user`) |
 | `workflowId` | ✅ | Folder name (e.g., `"auth"`) |
 | `title` | ✅ | Display name (verb + noun) |
-| `description` | ✅ | ONE action, ONE outcome. No "and". Max 10 words. |
+| `description` | ✅ | **BDD-ready description** (see format below) |
 | `nodeType` | ✅ | **Must be `"feature"`** |
 | `fileName` | ✅ | Same as `id` (for file generation) |
 | `position` | ✅ | `{x, y}` - vertical flow (y: 100, 250, 400...) |
 | `dependencies` | ✅ | Array of node IDs (can be cross-folder) |
 | `testLayers` | ⚪ | Optional. `["ui"]`, `["api"]`, or `["ui", "api"]`. Omit to use global settings. |
 
-**testLayers inference:**
-- UI components (render, display, show) → `["ui"]`
-- API/DB operations (fetch, create, validate, hash) → `["api"]`
-- Full features with both UI and backend → `["ui", "api"]` or omit
+---
+
+## Description Format (CRITICAL for BDD/Test Generation)
+
+Descriptions must be **detailed enough to write BDD scenarios and Playwright tests** without guessing.
+
+### For API nodes (`testLayers: ["api"]`):
+```
+[HTTP METHOD] [endpoint] with [request body].
+Returns [success response] on success.
+Returns [error code] with [error response] on failure.
+```
+
+**Examples:**
+```
+"POST /api/auth/login with {email, password}. Returns {token, userId} on success. Returns 401 with {error: 'Invalid credentials'} on failure."
+
+"GET /api/users/:id with Authorization header. Returns {id, name, email, avatar} on success. Returns 404 with {error: 'User not found'} if not exists."
+
+"DELETE /api/posts/:id. Returns 204 on success. Returns 403 with {error: 'Not authorized'} if not owner."
+```
+
+### For UI nodes (`testLayers: ["ui"]`):
+```
+[Trigger/When]. [What happens].
+Success: [visible result].
+Failure: [error message shown].
+```
+
+**Examples:**
+```
+"When user clicks 'Submit' button on login form. Validates email and password fields. Success: redirects to /dashboard. Failure: shows 'Invalid credentials' error below form."
+
+"When user uploads profile photo. Shows upload progress bar. Success: displays new photo in avatar circle. Failure: shows 'File too large (max 5MB)' toast."
+
+"When page loads, fetch and display user's order history. Success: shows table with columns [Date, Items, Total, Status]. Empty: shows 'No orders yet' message."
+```
+
+### For Full-stack nodes (`testLayers: ["ui", "api"]`):
+```
+[User action] triggers [API call].
+UI shows [loading state].
+Success: [UI update] + [API response].
+Failure: [error UI] + [API error].
+```
+
+**Example:**
+```
+"User clicks 'Add to Cart' button triggers POST /api/cart with {productId, quantity}. UI shows spinner on button. Success: button changes to 'Added ✓', cart count increases. Failure: shows 'Out of stock' toast, button stays enabled."
+```
+
+---
+
+## testLayers Inference
+
+- **UI only** (`["ui"]`): Form validation, navigation, display, visual feedback
+- **API only** (`["api"]`): Data operations, authentication, business logic
+- **Both** (`["ui", "api"]`): User actions that call backend and update UI
 
 ---
 
@@ -233,14 +313,16 @@ Create edges for **same-folder dependencies only**:
 
 ## Checklist
 - [ ] All IDs are verb-noun format (e.g., `validate-email`, `create-user`)
-- [ ] Each node solves ONE problem only - no "and" in descriptions
-- [ ] Descriptions are max 10 words with single clear outcome
+- [ ] Each node is a **testable behavior** (can write Playwright test for it)
+- [ ] NO setup/install/config nodes (document those in README instead)
+- [ ] Descriptions include: trigger, action, success result, failure result
+- [ ] API descriptions include: endpoint, request body, response format, error codes
+- [ ] UI descriptions include: user action, visual feedback, success/failure states
 - [ ] `nodeType` = `"folder"` in root, `"feature"` in folder workflows
 - [ ] `workflowId` = `"root"` for folders, folder name for features
 - [ ] `fileName` exists for all feature nodes
 - [ ] Dependencies reference valid node IDs
 - [ ] Edges only for same-folder dependencies
-- [ ] `testLayers` set appropriately: `["ui"]` for UI, `["api"]` for backend, omit for both
 - [ ] Valid JSON (no comments, no trailing commas)
 - [ ] NO `.js`/`.tsx` files created - only `.workflow.json`
 - [ ] NO generic nodes ("authentication", "user-management" = INVALID)
