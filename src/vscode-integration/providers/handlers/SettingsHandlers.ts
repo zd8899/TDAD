@@ -160,4 +160,40 @@ export class SettingsHandlers {
         }
     }
 
+    /**
+     * Update CLI settings from Autopilot dialog (preset + skipPermissions)
+     * Saves permanently like Settings modal
+     */
+    async handleUpdateCLISettingsFromDialog(preset: string, skipPermissions: boolean): Promise<void> {
+        try {
+            const config = vscode.workspace.getConfiguration('tdad');
+
+            // Map preset to command
+            const presetCommands: Record<string, string> = {
+                'claude': 'claude "Read .tdad/NEXT_TASK.md and execute the task. When done, write DONE to .tdad/AGENT_DONE.md"',
+                'aider': 'aider --message "{prompt}"',
+                'codex': 'codex "{prompt}"'
+            };
+
+            // Only update command if not custom
+            if (preset !== 'custom' && presetCommands[preset]) {
+                await config.update('agent.cli.command', presetCommands[preset], vscode.ConfigurationTarget.Workspace);
+            }
+
+            // Update permission flags
+            const currentFlags = config.get<any>('agent.cli.permissionFlags') || {};
+            const updatedFlags = {
+                ...currentFlags,
+                claude: { dangerouslySkipPermissions: skipPermissions },
+                aider: currentFlags.aider || { yesAlways: false, autoCommit: false },
+                codex: currentFlags.codex || { autoApprove: false }
+            };
+            await config.update('agent.cli.permissionFlags', updatedFlags, vscode.ConfigurationTarget.Workspace);
+
+            logCanvas(`CLI settings saved from dialog: preset=${preset}, skipPermissions=${skipPermissions}`);
+        } catch (error) {
+            logError('CANVAS', 'Failed to update CLI settings from dialog', error);
+        }
+    }
+
 }

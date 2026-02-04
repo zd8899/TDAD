@@ -15,7 +15,6 @@ import { SettingsHandlers } from './handlers/SettingsHandlers';
 import { NavigationHandlers } from './handlers/NavigationHandlers';
 import { AutomationHandlers } from './handlers/AutomationHandlers';
 import { PromptHandlers } from './handlers/PromptHandlers';
-import { CLIAgentLauncher } from '../CLIAgentLauncher';
 
 interface BreadcrumbItem {
     nodeId: string;
@@ -147,6 +146,9 @@ export class SimplifiedWorkflowCanvasProvider {
                 this._extensionUri,
                 this._settingsHandlers
             );
+
+            // Check for updated prompt templates (non-blocking)
+            this._promptHandlers.checkForTemplateUpdates();
 
             await this._loadCanvas();
 
@@ -510,6 +512,10 @@ export class SimplifiedWorkflowCanvasProvider {
                             await this._settingsHandlers.handleUpdateCLISettings(message.cliSettings);
                             break;
 
+                        case 'updateCLISettingsFromDialog':
+                            await this._settingsHandlers.handleUpdateCLISettingsFromDialog(message.preset, message.skipPermissions);
+                            break;
+
                         case 'submitFeedback':
                             // Handle feedback submission from webview
                             const feedbackManager = (global as any).tdadFeedbackManager;
@@ -568,14 +574,6 @@ export class SimplifiedWorkflowCanvasProvider {
                             logCanvas(`runSingleNodeAutomation - received modes from webview: ${JSON.stringify(message.modes)}`);
                             const singleNodeModes = message.modes || ['bdd', 'test', 'run-fix'];
                             logCanvas(`runSingleNodeAutomation - using modes: [${singleNodeModes.join(', ')}]`);
-
-                            // Apply CLI overrides if provided
-                            if (message.cliOverrides) {
-                                const launcher = CLIAgentLauncher.getInstance(this._storage.getWorkspaceRoot());
-                                launcher.setCliOverrides(message.cliOverrides);
-                                logCanvas(`runSingleNodeAutomation - CLI overrides: ${JSON.stringify(message.cliOverrides)}`);
-                            }
-
                             await this._testWorkflowHandlers.handleRunSingleNodeAutomation(
                                 message.nodeId,
                                 singleNodeModes
@@ -595,14 +593,6 @@ export class SimplifiedWorkflowCanvasProvider {
 
                         case 'runAllNodesAutomation': {
                             logCanvas('Received runAllNodesAutomation message');
-
-                            // Apply CLI overrides if provided
-                            if (message.cliOverrides) {
-                                const launcher = CLIAgentLauncher.getInstance(this._storage.getWorkspaceRoot());
-                                launcher.setCliOverrides(message.cliOverrides);
-                                logCanvas(`runAllNodesAutomation - CLI overrides: ${JSON.stringify(message.cliOverrides)}`);
-                            }
-
                             // allFolders=true means run all nodes (pass null), allFolders=false means use current folder (pass undefined)
                             await this._testWorkflowHandlers.handleRunAllNodesAutomation(
                                 message.confirmed === true,

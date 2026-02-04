@@ -654,8 +654,17 @@ const CanvasApp: React.FC = () => {
   }, [postMessage]);
 
   // Autopilot dialog handlers
-  const handleAutopilotConfirm = useCallback((modes: AutopilotModes, maxRetries: number, cliOverrides?: { preset: string; skipPermissions: boolean }) => {
+  const handleAutopilotConfirm = useCallback((modes: AutopilotModes, maxRetries: number, cliSettings?: { preset: string; skipPermissions: boolean }) => {
     setAutopilotDialogOpen(false);
+
+    // Save CLI settings permanently (same as Settings modal)
+    if (cliSettings) {
+      postMessage({
+        command: 'updateCLISettingsFromDialog',
+        preset: cliSettings.preset,
+        skipPermissions: cliSettings.skipPermissions
+      });
+    }
 
     if (autopilotIsSingleNode && selectedNode) {
       // Single node automation
@@ -663,8 +672,7 @@ const CanvasApp: React.FC = () => {
         command: 'runSingleNodeAutomation',
         nodeId: selectedNode.id,
         modes,
-        maxRetries,
-        cliOverrides
+        maxRetries
       });
     } else {
       // All nodes automation
@@ -675,8 +683,7 @@ const CanvasApp: React.FC = () => {
         confirmed: true,
         allFolders: autopilotIsAllFolders,
         modes,
-        maxRetries,
-        cliOverrides
+        maxRetries
       });
     }
   }, [postMessage, autopilotIsSingleNode, autopilotIsAllFolders, selectedNode]);
