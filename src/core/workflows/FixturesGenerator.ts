@@ -412,11 +412,80 @@ const test = base.extend({
             writeTraceIncremental(testTitle, { pageError: errorEntry });
         });
 
+        // Create request wrapper that logs API calls automatically
+        const createRequestWrapper = () => {
+            const methods = ['get', 'post', 'put', 'delete', 'patch', 'head', 'fetch'];
+            const wrapper = {};
+
+            methods.forEach(method => {
+                wrapper[method] = async (url, options) => {
+                    const startTime = Date.now();
+                    const fullUrl = url.startsWith('http') ? url : url;
+
+                    let requestBody = null;
+                    if (options) {
+                        if (options.multipart) {
+                            requestBody = '[FormData - file upload]';
+                        } else if (options.data) {
+                            requestBody = options.data;
+                        } else if (options.form) {
+                            requestBody = options.form;
+                        }
+                    }
+
+                    try {
+                        const response = await page.request[method](url, options);
+                        const duration = Date.now() - startTime;
+
+                        let responseBody = null;
+                        try {
+                            const text = await response.text();
+                            responseBody = text ? JSON.parse(text) : null;
+                        } catch (e) {
+                            // Response is not JSON, keep as null
+                        }
+
+                        const apiRequest = {
+                            method: method.toUpperCase(),
+                            url: response.url(),
+                            status: response.status(),
+                            requestBody,
+                            responseBody,
+                            duration,
+                            timestamp: startTime
+                        };
+
+                        writeTraceIncremental(testTitle, { apiRequest });
+
+                        return response;
+                    } catch (error) {
+                        const duration = Date.now() - startTime;
+                        const apiRequest = {
+                            method: method.toUpperCase(),
+                            url: fullUrl,
+                            status: 0,
+                            requestBody,
+                            responseBody: { error: error.message },
+                            duration,
+                            timestamp: startTime,
+                            error: error.message
+                        };
+
+                        writeTraceIncremental(testTitle, { apiRequest });
+                        throw error;
+                    }
+                };
+            });
+
+            return wrapper;
+        };
+
         const traceRef = {
             addApiRequest: (req) => writeTraceIncremental(testTitle, { apiRequest: req }),
             addConsoleLog: (log) => writeTraceIncremental(testTitle, { consoleLog: log }),
             addPageError: (err) => writeTraceIncremental(testTitle, { pageError: err }),
-            setActionResult: (result) => writeTraceIncremental(testTitle, { actionResult: result })
+            setActionResult: (result) => writeTraceIncremental(testTitle, { actionResult: result }),
+            request: createRequestWrapper()
         };
 
         await use(traceRef);

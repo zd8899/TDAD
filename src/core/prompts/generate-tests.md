@@ -40,15 +40,17 @@ URLs are configured in `playwright.config.js` via projects. Use **relative URLs*
 ```javascript
 // Playwright automatically prepends baseURL from the active project
 await page.goto('/login');        // Frontend tests
-await page.request.get('/api/users');  // API tests
+await tdadTrace.request.get('/api/users');  // API tests (use tdadTrace.request for automatic logging)
 ```
 {{/if}}
 
 {{#if testSettings.backendIncluded}}
 ### API Testing
-- **Scenarios:** Look for `[API]` prefix in Gherkin. API tests make HTTP requests directly (page.request).
+- **Scenarios:** Look for `[API]` prefix in Gherkin. API tests make HTTP requests directly.
+- **IMPORTANT:** Use `tdadTrace.request` instead of `page.request` for API calls. This ensures requests are logged to trace files.
 ```javascript
-// Check status AND data
+// Use tdadTrace.request (NOT page.request) for automatic API logging
+const response = await tdadTrace.request.post('/api/users', { data: payload });
 expect(result.statusCode).toBe(200);
 expect(result.body.id).toBeDefined();
 ```
@@ -116,14 +118,15 @@ Feature: Login
 
 **Output `.action.js`:**
 ```javascript
-async function performLoginAction(page, context = {}) {
+async function performLoginAction(page, context = {}, tdadTrace = null) {
   try {
 {{#if testSettings.backendIncluded}}
     // [API] API Request Logic
     // Only run if context.mode is 'api' OR if this is a shared action
     if (context.mode === 'api' || !context.mode) {
-        // ... perform fetch/request ...
-        const response = await page.request.post('/api/login', { ... });
+        // Use tdadTrace.request for automatic API logging (falls back to page.request if not available)
+        const request = tdadTrace?.request || page.request;
+        const response = await request.post('/api/login', { ... });
         // If specifically testing API, return early with response
         if (context.mode === 'api') {
              return { success: response.ok(), statusCode: response.status(), body: await response.json() };
@@ -187,8 +190,10 @@ test.describe('Login', () => {
   // ==========================================
   // API TESTS
   // ==========================================
-  test('[API] Login API', async ({ page }) => {
-    const result = await performLoginAction(page, { mode: 'api' });
+  test('[API] Login API', async ({ page, tdadTrace }) => {
+    // Pass tdadTrace to action for automatic API request logging
+    const result = await performLoginAction(page, { mode: 'api' }, tdadTrace);
+    tdadTrace.setActionResult(result);
 
     // ✅ Unconditional assertions (never wrap in if blocks)
     expect(result.statusCode).toBe(200);
@@ -200,8 +205,9 @@ test.describe('Login', () => {
   // ==========================================
   // UI TESTS
   // ==========================================
-  test('[UI] Successful login flow', async ({ page }) => {
-    const result = await performLoginAction(page, { mode: 'ui' });
+  test('[UI] Successful login flow', async ({ page, tdadTrace }) => {
+    const result = await performLoginAction(page, { mode: 'ui' }, tdadTrace);
+    tdadTrace.setActionResult(result);
 
     // ✅ Unconditional - always assert, never wrap in if(result.success)
     expect(result.success).toBe(true, `Action failed: ${result.errorMessage}`);
@@ -211,7 +217,7 @@ test.describe('Login', () => {
     await expect(page.getByText('Welcome back')).toBeVisible();
 
     // ✅ Round-trip: verify session actually works (access protected resource)
-    const profile = await page.request.get('/api/user/profile');
+    const profile = await tdadTrace.request.get('/api/user/profile');
     expect(profile.ok()).toBe(true);
   });
 {{/if}}
