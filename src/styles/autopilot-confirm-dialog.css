@@ -272,3 +272,66 @@
 .autopilot-retries-input:hover {
   border-color: rgba(139, 92, 246, 0.5);
 }
+
+/* CLI Selector */
+.autopilot-cli-selector {
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.autopilot-cli-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #555555;
+}
+
+.autopilot-cli-select {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: rgba(0, 0, 0, 0.04);
+  font-size: 13px;
+  font-weight: 500;
+  color: #333333;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 140px;
+}
+
+.autopilot-cli-select:focus {
+  outline: none;
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+}
+
+.autopilot-cli-select:hover {
+  border-color: rgba(139, 92, 246, 0.5);
+}
+
+.autopilot-skip-permissions-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #666666;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.03);
+  transition: all 0.2s ease;
+}
+
+.autopilot-skip-permissions-label:hover {
+  background: rgba(139, 92, 246, 0.08);
+}
+
+.autopilot-skip-permissions-label input[type="checkbox"] {
+  accent-color: #8b5cf6;
+  cursor: pointer;
+}

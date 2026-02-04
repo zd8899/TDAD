@@ -557,18 +557,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         </div>
 
                         <div style={sectionStyle}>
-                            <label style={checkboxContainerStyle}>
-                                <input
-                                    type="checkbox"
-                                    checked={cliEnabled}
-                                    onChange={(e) => setCLIEnabled(e.target.checked)}
-                                    style={{ accentColor: 'var(--vscode-focusBorder)' }}
-                                />
-                                <span style={{ fontWeight: 500 }}>Enable Autopilot Mode</span>
-                            </label>
-                        </div>
-
-                        <div style={sectionStyle}>
                             <label style={labelStyle}>Agent Driver</label>
                             {CLI_PRESETS.map(preset => (
                                 <label key={preset.id} style={{ ...checkboxContainerStyle, border: selectedPreset === preset.id ? '1px solid var(--vscode-focusBorder)' : '1px solid transparent' }}>

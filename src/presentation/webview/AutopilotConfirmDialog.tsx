@@ -1,8 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AutopilotModes } from '../../shared/types';
 export type AutopilotMode = 'bdd' | 'test' | 'run-fix';
 
 export type { AutopilotModes };
+
+interface CLISettings {
+  enabled: boolean;
+  command: string;
+  permissionFlags?: {
+    claude: { dangerouslySkipPermissions: boolean };
+    aider: { yesAlways: boolean; autoCommit: boolean };
+    codex: { autoApprove: boolean };
+  };
+}
 
 interface AutopilotConfirmDialogProps {
   isOpen: boolean;
@@ -11,7 +21,8 @@ interface AutopilotConfirmDialogProps {
   isAllFolders?: boolean;
   isSingleNode?: boolean;
   nodeName?: string;
-  onConfirm: (modes: AutopilotModes, maxRetries: number) => void;
+  cliSettings?: CLISettings;
+  onConfirm: (modes: AutopilotModes, maxRetries: number, cliSettings?: { preset: string; skipPermissions: boolean }) => void;
   onCancel: () => void;
   onOpenSettings?: () => void;
 }
@@ -22,6 +33,13 @@ const MODE_OPTIONS: { value: AutopilotMode; label: string; icon: string; descrip
   { value: 'run-fix', label: 'Run+Fix', icon: '🔄', description: 'Run and fix' }
 ];
 
+const CLI_PRESETS = [
+  { id: 'claude', label: 'Claude Code' },
+  { id: 'aider', label: 'Aider' },
+  { id: 'codex', label: 'Codex CLI' },
+  { id: 'custom', label: 'Custom' }
+];
+
 export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
   isOpen,
   pendingCount,
@@ -29,6 +47,7 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
   isAllFolders = false,
   isSingleNode = false,
   nodeName,
+  cliSettings,
   onConfirm,
   onCancel,
   onOpenSettings
@@ -36,6 +55,24 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
   // Default: all modes selected
   const [selectedModes, setSelectedModes] = useState<Set<AutopilotMode>>(new Set(['bdd', 'test', 'run-fix']));
   const [maxRetries, setMaxRetries] = useState<number>(10);
+
+  // CLI selection state
+  const [selectedCli, setSelectedCli] = useState<string>('claude');
+  const [skipPermissions, setSkipPermissions] = useState<boolean>(false);
+
+  // Initialize from cliSettings
+  useEffect(() => {
+    if (cliSettings?.command) {
+      if (cliSettings.command.includes('claude')) {setSelectedCli('claude');}
+      else if (cliSettings.command.includes('aider')) {setSelectedCli('aider');}
+      else if (cliSettings.command.includes('codex')) {setSelectedCli('codex');}
+      else {setSelectedCli('custom');}
+
+      if (cliSettings.permissionFlags?.claude?.dangerouslySkipPermissions) {
+        setSkipPermissions(true);
+      }
+    }
+  }, [cliSettings]);
 
   if (!isOpen) {return null;}
 
@@ -55,7 +92,7 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
     if (selectedModes.has('bdd')) {orderedModes.push('bdd');}
     if (selectedModes.has('test')) {orderedModes.push('test');}
     if (selectedModes.has('run-fix')) {orderedModes.push('run-fix');}
-    onConfirm(orderedModes, maxRetries);
+    onConfirm(orderedModes, maxRetries, { preset: selectedCli, skipPermissions });
   };
 
   const getMessage = () => {
@@ -129,6 +166,31 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
               className="autopilot-retries-input"
             />
           </label>
+        </div>
+
+        <div className="autopilot-cli-selector">
+          <label className="autopilot-cli-label">
+            Agent Driver:
+            <select
+              value={selectedCli}
+              onChange={(e) => setSelectedCli(e.target.value)}
+              className="autopilot-cli-select"
+            >
+              {CLI_PRESETS.map(preset => (
+                <option key={preset.id} value={preset.id}>{preset.label}</option>
+              ))}
+            </select>
+          </label>
+          {selectedCli === 'claude' && (
+            <label className="autopilot-skip-permissions-label">
+              <input
+                type="checkbox"
+                checked={skipPermissions}
+                onChange={(e) => setSkipPermissions(e.target.checked)}
+              />
+              <span>Skip Permissions (--dangerously-skip-permissions)</span>
+            </label>
+          )}
         </div>
 
         <div className="autopilot-confirm-buttons">
