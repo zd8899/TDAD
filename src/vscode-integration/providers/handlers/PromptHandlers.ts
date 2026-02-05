@@ -90,7 +90,8 @@ export class PromptHandlers {
                 logCanvas(`Applied ${updatedTemplates.length} latest templates`);
                 this.webview.postMessage({ command: 'templateUpdatesApplied' });
             } else if (action === 'update-review') {
-                // Update & Review: backup current → copy from extension → open diff
+                // Update & Review: backup all files first, then open all diffs
+                const diffPairs: { backupFile: string; currentFile: string; template: string }[] = [];
                 for (const template of updatedTemplates) {
                     const currentFile = path.join(promptsDir, template);
                     const extensionFile = path.join(extensionPromptsDir, template);
@@ -98,13 +99,17 @@ export class PromptHandlers {
                     if (existsSync(currentFile) && existsSync(extensionFile)) {
                         copyFileSync(currentFile, backupFile);
                         copyFileSync(extensionFile, currentFile);
-                        await vscode.commands.executeCommand('vscode.diff',
-                            vscode.Uri.file(backupFile),
-                            vscode.Uri.file(currentFile),
-                            `${template}: Your Old Version ↔ New Version (editable)`
-                        );
+                        diffPairs.push({ backupFile, currentFile, template });
                     }
                 }
+                // Open all diffs concurrently so they all appear as tabs
+                await Promise.all(diffPairs.map(({ backupFile, currentFile, template }) =>
+                    vscode.commands.executeCommand('vscode.diff',
+                        vscode.Uri.file(backupFile),
+                        vscode.Uri.file(currentFile),
+                        `${template}: Your Old ↔ New (editable)`
+                    )
+                ));
                 await promptService.markTemplatesAsApplied();
                 logCanvas(`Update & Review: ${updatedTemplates.length} templates with diff`);
                 this.webview.postMessage({ command: 'templateUpdatesApplied' });
