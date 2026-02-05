@@ -92,6 +92,56 @@ export class NodeAutomationHandlers {
     }
 
     /**
+     * Expand folder-level edges into feature-node edges so topological sort respects folder order.
+     * - Within each folder: creates a chain based on the children array order (child[0] → child[1] → ...)
+     * - Across folders: if folder A → folder B, the last child of A must complete before the first child of B
+     */
+    private expandFolderEdges(featureNodes: Node[], allNodes: Node[], edges: Array<{ source: string; target: string }>): Array<{ source: string; target: string }> {
+        const featureNodeIds = new Set(featureNodes.map(n => n.id));
+        const folderNodes = allNodes.filter(n => n.nodeType === 'folder');
+        const folderMap = new Map(folderNodes.map(f => [f.id, f]));
+        const expandedEdges: Array<{ source: string; target: string }> = [];
+
+        // Get ordered feature children of a folder (respecting children array order)
+        const getOrderedFeatureChildren = (folderId: string): string[] => {
+            const folder = folderMap.get(folderId);
+            if (!folder || !(folder as any).children) { return []; }
+            return ((folder as any).children as string[]).filter(id => featureNodeIds.has(id));
+        };
+
+        // Within-folder chains: children execute in declared order
+        for (const folder of folderNodes) {
+            const orderedChildren = getOrderedFeatureChildren(folder.id);
+            for (let i = 0; i < orderedChildren.length - 1; i++) {
+                expandedEdges.push({ source: orderedChildren[i], target: orderedChildren[i + 1] });
+            }
+        }
+
+        // Cross-folder edges: last child of source folder → first child of target folder
+        for (const edge of edges) {
+            const sourceFolder = folderMap.get(edge.source);
+            const targetFolder = folderMap.get(edge.target);
+
+            if (sourceFolder && targetFolder) {
+                const sourceChildren = getOrderedFeatureChildren(edge.source);
+                const targetChildren = getOrderedFeatureChildren(edge.target);
+                if (sourceChildren.length > 0 && targetChildren.length > 0) {
+                    expandedEdges.push({
+                        source: sourceChildren[sourceChildren.length - 1],
+                        target: targetChildren[0]
+                    });
+                }
+            } else if (featureNodeIds.has(edge.source) && featureNodeIds.has(edge.target)) {
+                // Direct feature-to-feature edge, keep as-is
+                expandedEdges.push(edge);
+            }
+        }
+
+        logCanvas(`expandFolderEdges: ${edges.length} original edges → ${expandedEdges.length} expanded edges`);
+        return expandedEdges;
+    }
+
+    /**
      * Sort nodes by dependency order (topological sort)
      */
     private sortNodesByDependency(nodes: Node[], edges: Array<{ source: string; target: string }>): Node[] {
@@ -417,7 +467,8 @@ export class NodeAutomationHandlers {
             logCanvas('Confirmed, proceeding with automation');
 
             const allEdges = this.storage.loadAllEdges();
-            const sortedNodes = this.sortNodesByDependency(featureNodes, allEdges);
+            const expandedEdges = this.expandFolderEdges(featureNodes, allNodes, allEdges);
+            const sortedNodes = this.sortNodesByDependency(featureNodes, expandedEdges);
 
             logCanvas(`Found ${sortedNodes.length} nodes to process`);
 
