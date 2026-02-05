@@ -5,6 +5,21 @@ All notable changes to the TDAD extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.11] - 2026-02-04
+
+### Added
+- CLI driver dropdown to Autopilot dialog for selecting CLI providers
+- Enhanced API testing and logging capabilities
+
+### Changed
+- Refactored template update handling and improved accessibility tree capture
+- Updated blueprint generation guidelines and feature node definitions
+- Improved stylesheet reference in webview for styling consistency
+
+### Fixed
+- CLI settings not applied: settings now saved before automation starts
+- CLI overrides from Autopilot dialog properly wired to backend
+
 ## [0.0.9] - 2026-01-30
 
 ### Added
