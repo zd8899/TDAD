@@ -662,25 +662,15 @@ const CanvasApp: React.FC = () => {
   const handleAutopilotConfirm = useCallback((modes: AutopilotModes, maxRetries: number, cliSettings?: { preset: string; skipPermissions: boolean }) => {
     setAutopilotDialogOpen(false);
 
-    // Save CLI settings permanently (same as Settings modal)
-    if (cliSettings) {
-      postMessage({
-        command: 'updateCLISettingsFromDialog',
-        preset: cliSettings.preset,
-        skipPermissions: cliSettings.skipPermissions
-      });
-    }
-
     if (autopilotIsSingleNode && selectedNode) {
-      // Single node automation
       postMessage({
         command: 'runSingleNodeAutomation',
         nodeId: selectedNode.id,
         modes,
-        maxRetries
+        maxRetries,
+        cliSettings
       });
     } else {
-      // All nodes automation
       setIsRunningAllNodes(true);
       setAllNodesProgress('Starting...');
       postMessage({
@@ -688,7 +678,8 @@ const CanvasApp: React.FC = () => {
         confirmed: true,
         allFolders: autopilotIsAllFolders,
         modes,
-        maxRetries
+        maxRetries,
+        cliSettings
       });
     }
   }, [postMessage, autopilotIsSingleNode, autopilotIsAllFolders, selectedNode]);

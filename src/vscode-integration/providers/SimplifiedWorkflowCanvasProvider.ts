@@ -516,10 +516,6 @@ export class SimplifiedWorkflowCanvasProvider {
                             await this._settingsHandlers.handleUpdateCLISettings(message.cliSettings);
                             break;
 
-                        case 'updateCLISettingsFromDialog':
-                            await this._settingsHandlers.handleUpdateCLISettingsFromDialog(message.preset, message.skipPermissions);
-                            break;
-
                         case 'submitFeedback':
                             // Handle feedback submission from webview
                             const feedbackManager = (global as any).tdadFeedbackManager;
@@ -578,6 +574,12 @@ export class SimplifiedWorkflowCanvasProvider {
                             logCanvas(`runSingleNodeAutomation - received modes from webview: ${JSON.stringify(message.modes)}`);
                             const singleNodeModes = message.modes || ['bdd', 'test', 'run-fix'];
                             logCanvas(`runSingleNodeAutomation - using modes: [${singleNodeModes.join(', ')}]`);
+
+                            // Save CLI settings before running (must complete first)
+                            if (message.cliSettings) {
+                                await this._settingsHandlers.handleUpdateCLISettingsFromDialog(message.cliSettings.preset, message.cliSettings.skipPermissions);
+                            }
+
                             await this._testWorkflowHandlers.handleRunSingleNodeAutomation(
                                 message.nodeId,
                                 singleNodeModes
@@ -597,6 +599,12 @@ export class SimplifiedWorkflowCanvasProvider {
 
                         case 'runAllNodesAutomation': {
                             logCanvas('Received runAllNodesAutomation message');
+
+                            // Save CLI settings before running (must complete first)
+                            if (message.cliSettings) {
+                                await this._settingsHandlers.handleUpdateCLISettingsFromDialog(message.cliSettings.preset, message.cliSettings.skipPermissions);
+                            }
+
                             // allFolders=true means run all nodes (pass null), allFolders=false means use current folder (pass undefined)
                             await this._testWorkflowHandlers.handleRunAllNodesAutomation(
                                 message.confirmed === true,
