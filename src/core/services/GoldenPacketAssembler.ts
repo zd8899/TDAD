@@ -646,42 +646,7 @@ export class GoldenPacketAssembler {
             }
         }
 
-        // DOM Snapshot is saved to trace file only (not shown in golden packet)
-
-        return output;
-    }
-
-    /**
-     * Format accessibility tree for AI-friendly output
-     * Shows interactive elements with their roles and names
-     */
-    private static formatAccessibilityTree(node: any, depth: number): string {
-        if (!node) {return '';}
-
-        let output = '';
-        const indent = '  '.repeat(depth);
-        const role = node.role || 'unknown';
-        const name = node.name ? ` "${node.name}"` : '';
-        const value = node.value ? ` [value: "${node.value}"]` : '';
-        const disabled = node.disabled ? ' (disabled)' : '';
-        const checked = node.checked !== undefined ? ` (checked: ${node.checked})` : '';
-
-        // Only show meaningful nodes (skip generic containers without names)
-        const isInteractive = ['button', 'link', 'textbox', 'checkbox', 'radio', 'combobox', 'listbox', 'menuitem', 'heading', 'img', 'alert', 'dialog'].includes(role);
-        const hasName = !!node.name;
-
-        if (isInteractive || hasName || depth === 0) {
-            output += `${indent}- ${role}${name}${value}${disabled}${checked}\n`;
-        }
-
-        // Recurse into children
-        if (node.children && Array.isArray(node.children)) {
-            for (const child of node.children) {
-                output += this.formatAccessibilityTree(child, depth + 1);
-            }
-        }
-
-        return output;
+            return output;
     }
 
     /**

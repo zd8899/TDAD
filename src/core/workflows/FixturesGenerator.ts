@@ -63,7 +63,7 @@ const path = require('path');`;
  * - API request/response capture
  * - Console log capture
  * - Page error capture
- * - DOM Snapshot (accessibility tree for AI debugging)
+ * - Accessibility tree snapshot (via ariaSnapshot for AI debugging)
  * - JS coverage collection
  *
  * IMPORTANT: Uses PER-WORKER files to avoid race conditions.
@@ -277,26 +277,12 @@ const test = base.extend({
 
         async function captureSnapshot() {
             try {
-                const snapshot = await page.accessibility.snapshot();
-                if (snapshot) {
+                const ariaYaml = await page.locator('body').ariaSnapshot();
+                if (ariaYaml) {
                     return {
                         type: 'accessibility',
                         url: page.url(),
-                        tree: snapshot
-                    };
-                }
-            } catch (e) { /* Accessibility API might not be available */ }
-
-            try {
-                const html = await page.content();
-                if (html) {
-                    const truncatedHtml = html.length > 5000
-                        ? html.substring(0, 5000) + '\\n... [truncated]'
-                        : html;
-                    return {
-                        type: 'html',
-                        url: page.url(),
-                        content: truncatedHtml
+                        tree: ariaYaml
                     };
                 }
             } catch (e) { /* Page might be closed */ }
@@ -500,10 +486,7 @@ const test = base.extend({
         const isApiTest = /\\[API(-\\d+)?\\]/.test(testTitle);
         const screenshotPath = isApiTest ? null : await captureScreenshot(testTitle, testInfo.file);
 
-        let domSnapshot = null;
-        if (testInfo.status !== 'passed' && !isApiTest) {
-            domSnapshot = await captureSnapshot();
-        }
+        const domSnapshot = isApiTest ? null : await captureSnapshot();
 
         const strippedCoverage = jsCoverage.map(entry => ({
             url: entry.url,

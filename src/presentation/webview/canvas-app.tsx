@@ -40,6 +40,7 @@ import { NotificationData } from './CanvasNotification';
 import '../../styles/canvas-app.css';
 import '../../styles/canvas-controls.css';
 import '../../styles/autopilot-confirm-dialog.css';
+import '../../styles/template-update-banner.css';
 import '../../styles/project-wizard.css';
 import { AutopilotConfirmDialog, AutopilotModes } from './AutopilotConfirmDialog';
 
@@ -130,6 +131,9 @@ const CanvasApp: React.FC = () => {
   // Canvas notification state
   const [notification, setNotification] = useState<NotificationData | null>(null);
 
+  // Template update state
+  const [pendingTemplateUpdates, setPendingTemplateUpdates] = useState<string[] | null>(null);
+
   // Helper to show notifications
   const showNotification = useCallback((message: string, subMessage?: string, type: NotificationData['type'] = 'info') => {
     setNotification({
@@ -180,7 +184,8 @@ const CanvasApp: React.FC = () => {
     setAutopilotFolderName,
     setAutopilotDialogOpen,
     setNodeFileStatus,
-    setShowFeedbackForm
+    setShowFeedbackForm,
+    setPendingTemplateUpdates
   };
 
   const messageDeps: CanvasMessageDeps = {
@@ -834,6 +839,34 @@ const CanvasApp: React.FC = () => {
               onNavigate={handleNavigateToBreadcrumb}
             />
           </Panel>
+
+          {pendingTemplateUpdates && pendingTemplateUpdates.length > 0 && (
+            <Panel position="top-center" style={{ marginTop: '10px' }}>
+              <div className="template-update-banner">
+                <span className="template-update-banner__text">
+                  {pendingTemplateUpdates.length} prompt template update(s) available
+                </span>
+                <button
+                  className="template-update-banner__btn-primary"
+                  onClick={() => postMessage({ command: 'templateUpdateAction', action: 'apply' })}
+                >
+                  Update All
+                </button>
+                <button
+                  className="template-update-banner__btn-secondary"
+                  onClick={() => postMessage({ command: 'templateUpdateAction', action: 'update-review' })}
+                >
+                  Update &amp; Review
+                </button>
+                <button
+                  className="template-update-banner__btn-dismiss"
+                  onClick={() => setPendingTemplateUpdates(null)}
+                >
+                  ×
+                </button>
+              </div>
+            </Panel>
+          )}
 
           <Panel position="bottom-center" style={{ marginBottom: '40px' }}>
             <UnifiedBottomBar

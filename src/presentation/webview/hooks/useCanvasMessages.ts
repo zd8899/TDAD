@@ -60,6 +60,9 @@ export interface CanvasMessageState {
 
     // Feedback form state
     setShowFeedbackForm: (show: boolean) => void;
+
+    // Template update state
+    setPendingTemplateUpdates: (templates: string[] | null) => void;
 }
 
 export interface CanvasMessageDeps {
@@ -149,6 +152,13 @@ export function createMessageHandler(
                 break;
             case 'autopilotInfo':
                 handleAutopilotInfo(message, state, deps);
+                break;
+            case 'templateUpdatesAvailable':
+                state.setPendingTemplateUpdates(message.templates || []);
+                break;
+            case 'templateUpdatesApplied':
+                state.setPendingTemplateUpdates(null);
+                deps.showNotification('Prompt templates updated to latest version', undefined, 'success');
                 break;
         }
     };

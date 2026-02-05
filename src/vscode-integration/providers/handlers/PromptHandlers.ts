@@ -17,6 +17,7 @@ import { SettingsHandlers } from './SettingsHandlers';
 
 export class PromptHandlers {
     private _promptService: PromptService | null = null;
+    private _templateUpdateCheckDone = false;
 
     constructor(
         private readonly webview: vscode.Webview,
@@ -34,6 +35,83 @@ export class PromptHandlers {
             this._promptService = new PromptService(this.extensionUri.fsPath, workspaceRoot);
         }
         return this._promptService;
+    }
+
+    /**
+     * Check for updated prompt templates and notify user (once per session).
+     * Sends notification through webview since Cursor cancels native VS Code notifications.
+     */
+    async checkForTemplateUpdates(): Promise<void> {
+        if (this._templateUpdateCheckDone) {
+            return;
+        }
+        this._templateUpdateCheckDone = true;
+
+        try {
+            const promptService = await this.getPromptService();
+            const updatedTemplates = await promptService.ensureWorkspaceTemplates();
+
+            if (updatedTemplates.length > 0) {
+                // Wait for React to mount and register message listener
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                logCanvas(`Sending templateUpdatesAvailable to webview: ${updatedTemplates.length} templates`);
+                this.webview.postMessage({
+                    command: 'templateUpdatesAvailable',
+                    templates: updatedTemplates,
+                    count: updatedTemplates.length
+                });
+            }
+        } catch (error) {
+            logError('CANVAS', 'Failed to check for template updates', error);
+        }
+    }
+
+    /**
+     * Handle user action on template update notification from webview
+     */
+    async handleTemplateUpdateAction(action: string): Promise<void> {
+        try {
+            const promptService = await this.getPromptService();
+            const updatedTemplates = await promptService.ensureWorkspaceTemplates();
+            const workspaceRoot = this.storage.getWorkspaceRoot();
+            const promptsDir = path.join(workspaceRoot, '.tdad', 'prompts');
+            const extensionPromptsDir = path.join(this.extensionUri.fsPath, 'out', 'core', 'prompts');
+
+            if (action === 'apply') {
+                // Quick update: overwrite workspace templates from extension
+                for (const template of updatedTemplates) {
+                    const workspacePath = path.join(promptsDir, template);
+                    const extensionPath = path.join(extensionPromptsDir, template);
+                    if (existsSync(extensionPath)) {
+                        copyFileSync(extensionPath, workspacePath);
+                    }
+                }
+                await promptService.markTemplatesAsApplied();
+                logCanvas(`Applied ${updatedTemplates.length} latest templates`);
+                this.webview.postMessage({ command: 'templateUpdatesApplied' });
+            } else if (action === 'update-review') {
+                // Update & Review: backup current → copy from extension → open diff
+                for (const template of updatedTemplates) {
+                    const currentFile = path.join(promptsDir, template);
+                    const extensionFile = path.join(extensionPromptsDir, template);
+                    const backupFile = path.join(promptsDir, `${template}.backup`);
+                    if (existsSync(currentFile) && existsSync(extensionFile)) {
+                        copyFileSync(currentFile, backupFile);
+                        copyFileSync(extensionFile, currentFile);
+                        await vscode.commands.executeCommand('vscode.diff',
+                            vscode.Uri.file(backupFile),
+                            vscode.Uri.file(currentFile),
+                            `${template}: Your Old Version ↔ New Version (editable)`
+                        );
+                    }
+                }
+                await promptService.markTemplatesAsApplied();
+                logCanvas(`Update & Review: ${updatedTemplates.length} templates with diff`);
+                this.webview.postMessage({ command: 'templateUpdatesApplied' });
+            }
+        } catch (error) {
+            logError('CANVAS', 'Failed to handle template update action', error);
+        }
     }
 
     /**

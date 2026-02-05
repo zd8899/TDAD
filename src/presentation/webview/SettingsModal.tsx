@@ -940,6 +940,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             }}
                         >
                             {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                            {tab === 'slack' && <span style={{ marginLeft: '4px', fontSize: '7px', fontWeight: 'bold', background: '#ff4444', color: 'white', padding: '1px 3px', borderRadius: '6px', boxShadow: '0 1px 2px rgba(0,0,0,0.3)', verticalAlign: 'top' }}>NEW</span>}
                         </button>
                     ))}
                 </div>

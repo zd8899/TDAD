@@ -147,9 +147,6 @@ export class SimplifiedWorkflowCanvasProvider {
                 this._settingsHandlers
             );
 
-            // Check for updated prompt templates (non-blocking)
-            this._promptHandlers.checkForTemplateUpdates();
-
             await this._loadCanvas();
 
             this._panel.webview.html = await this._getHtmlForWebview();
@@ -159,6 +156,9 @@ export class SimplifiedWorkflowCanvasProvider {
             this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
 
             logCanvas('MVP: Canvas initialized with simple JSON storage');
+
+            // Check for updated prompt templates after webview is ready
+            this._promptHandlers.checkForTemplateUpdates();
         } catch (error) {
             logError('CANVAS', 'Failed to initialize canvas', error);
             vscode.window.showErrorMessage('TDAD: Failed to initialize canvas');
@@ -463,6 +463,10 @@ export class SimplifiedWorkflowCanvasProvider {
                         case 'openPromptTemplate':
                             logCanvas(`Received openPromptTemplate message: ${JSON.stringify(message)}`);
                             await this._promptHandlers.handleOpenPromptTemplate(message.templateName);
+                            break;
+
+                        case 'templateUpdateAction':
+                            await this._promptHandlers.handleTemplateUpdateAction(message.action);
                             break;
 
                         case 'generateBlueprintPrompt':

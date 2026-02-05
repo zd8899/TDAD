@@ -1,0 +1,61 @@
+/* Template Update Banner - Notification for prompt template updates */
+
+.template-update-banner {
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: #92400e;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.template-update-banner__text {
+  flex: 1;
+}
+
+.template-update-banner__btn-primary {
+  background: #f59e0b;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.template-update-banner__btn-primary:hover {
+  background: #d97706;
+}
+
+.template-update-banner__btn-secondary {
+  background: transparent;
+  color: #92400e;
+  border: 1px solid #d97706;
+  border-radius: 4px;
+  padding: 4px 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.template-update-banner__btn-secondary:hover {
+  background: rgba(217, 119, 6, 0.1);
+}
+
+.template-update-banner__btn-dismiss {
+  background: transparent;
+  border: none;
+  color: #92400e;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.template-update-banner__btn-dismiss:hover {
+  color: #78350f;
+}

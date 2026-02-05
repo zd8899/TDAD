@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import { logCanvas } from '../../shared/utils/Logger';
 import { toPascalCase } from '../../shared/utils/stringUtils';
 
@@ -53,28 +54,115 @@ export class PromptService {
     }
 
     /**
-     * Ensure workspace prompts directory exists and copy default templates if needed
+     * Calculate MD5 hash of file content
      */
-    async ensureWorkspaceTemplates(): Promise<void> {
+    private getFileHash(filePath: string): string | null {
+        try {
+            const content = fs.readFileSync(filePath, 'utf-8');
+            return crypto.createHash('md5').update(content).digest('hex');
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Load the hash tracking file that records which extension version was last applied per template
+     */
+    private loadAppliedHashes(): Record<string, string> {
+        const hashFile = path.join(this.workspacePromptsDir, '.applied-hashes.json');
+        try {
+            if (fs.existsSync(hashFile)) {
+                return JSON.parse(fs.readFileSync(hashFile, 'utf-8'));
+            }
+        } catch { /* ignore corrupt file */ }
+        return {};
+    }
+
+    /**
+     * Save the hash tracking file
+     */
+    private saveAppliedHashes(hashes: Record<string, string>): void {
+        const hashFile = path.join(this.workspacePromptsDir, '.applied-hashes.json');
+        fs.writeFileSync(hashFile, JSON.stringify(hashes, null, 2), 'utf-8');
+    }
+
+    /**
+     * Ensure workspace prompts directory exists and copy default templates if needed.
+     * Returns list of templates that have new versions available (for notification).
+     * Uses hash tracking so users aren't re-notified after customizing an applied update.
+     */
+    async ensureWorkspaceTemplates(): Promise<string[]> {
+        const updatedTemplates: string[] = [];
+
         if (this.workspacePromptsDir === this.extensionPromptsDir) {
-            return; // No workspace path provided
+            return updatedTemplates;
         }
 
-        // Create .tdad/prompts/ directory if it doesn't exist
         if (!fs.existsSync(this.workspacePromptsDir)) {
             fs.mkdirSync(this.workspacePromptsDir, { recursive: true });
         }
 
-        // Copy default templates if they don't exist in workspace
         const templates = ['generate-bdd.md', 'generate-tests.md', 'generate-blueprint.md', 'golden-packet.md', 'generate-project-docs.md', 'generate-project-scaffold.md'];
+        const appliedHashes = this.loadAppliedHashes();
+        let hashesChanged = false;
+
         for (const template of templates) {
             const workspaceTemplatePath = path.join(this.workspacePromptsDir, template);
             const extensionTemplatePath = path.join(this.extensionPromptsDir, template);
+            const backupTemplatePath = path.join(this.workspacePromptsDir, `${template}.backup`);
+            const latestTemplatePath = path.join(this.workspacePromptsDir, `${template}.latest`);
 
-            if (!fs.existsSync(workspaceTemplatePath) && fs.existsSync(extensionTemplatePath)) {
+            // Clean up stale files from previous sessions
+            if (fs.existsSync(backupTemplatePath)) { fs.unlinkSync(backupTemplatePath); }
+            if (fs.existsSync(latestTemplatePath)) { fs.unlinkSync(latestTemplatePath); }
+
+            if (!fs.existsSync(extensionTemplatePath)) {
+                continue;
+            }
+
+            const extensionHash = this.getFileHash(extensionTemplatePath);
+
+            if (!fs.existsSync(workspaceTemplatePath)) {
+                // First time: copy from extension, record hash
                 fs.copyFileSync(extensionTemplatePath, workspaceTemplatePath);
+                if (extensionHash) {
+                    appliedHashes[template] = extensionHash;
+                    hashesChanged = true;
+                }
+            } else {
+                // Workspace exists — only notify if extension has a NEWER version than last applied
+                const lastAppliedHash = appliedHashes[template];
+
+                if (extensionHash && extensionHash !== lastAppliedHash) {
+                    // Extension version changed since last apply — user needs to know
+                    updatedTemplates.push(template);
+                }
             }
         }
+
+        if (hashesChanged) {
+            this.saveAppliedHashes(appliedHashes);
+        }
+
+        return updatedTemplates;
+    }
+
+    /**
+     * Record that the current extension hashes have been applied (called after user updates)
+     */
+    async markTemplatesAsApplied(): Promise<void> {
+        const templates = ['generate-bdd.md', 'generate-tests.md', 'generate-blueprint.md', 'golden-packet.md', 'generate-project-docs.md', 'generate-project-scaffold.md'];
+        const appliedHashes = this.loadAppliedHashes();
+
+        for (const template of templates) {
+            const extensionTemplatePath = path.join(this.extensionPromptsDir, template);
+            const extensionHash = this.getFileHash(extensionTemplatePath);
+            if (extensionHash) {
+                appliedHashes[template] = extensionHash;
+            }
+        }
+
+        this.saveAppliedHashes(appliedHashes);
     }
 
     /**

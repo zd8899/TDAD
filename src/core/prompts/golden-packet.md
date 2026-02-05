@@ -34,7 +34,7 @@
 - `pageErrors`: Uncaught JavaScript errors with stack traces
 - `actionResult`: Action outcome with statusCode and response body
 - `errorMessage` + `callStack`: Exact failure location
-- `domSnapshot`: Page state at failure
+- `domSnapshot`: Accessibility tree (YAML) - captured for all tests
 - `screenshotPath`: Visual evidence
 
 Check PASSED test traces as well to understand working patterns. Use trace to find WHERE to fix.
