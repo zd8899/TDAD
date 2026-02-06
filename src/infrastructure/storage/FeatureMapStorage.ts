@@ -258,9 +258,101 @@ export class FeatureMapStorage {
         // Start from root
         loadFolderRecursive(null);
 
+        // Repair workflowId for nodes in nested folders
+        this.repairWorkflowIds(allNodes);
+
         logger.debug('STORAGE', `loadAll: ${allNodes.length} nodes from root + ${folderCount} folders (recursive)`);
 
         return allNodes;
+    }
+
+    /**
+     * Repair workflowId values for nodes in nested folders.
+     * workflowId must match the parent folder's folderPath (e.g., "parent/child")
+     * not just the folder ID. Also fixes file path references that used the wrong workflowId.
+     */
+    private repairWorkflowIds(allNodes: Node[]): void {
+        // Build folder lookup: folderId -> folderPath
+        const folderPathMap = new Map<string, string>();
+        for (const node of allNodes) {
+            if (isFolderNode(node) && node.folderPath) {
+                folderPathMap.set(node.id, node.folderPath);
+            }
+        }
+
+        const nodesToRepair: Array<{ node: Node; correctWorkflowId: string; parentFolderId: string }> = [];
+
+        for (const node of allNodes) {
+            if (!node.parentId || isFolderNode(node)) {
+                continue;
+            }
+
+            const correctPath = folderPathMap.get(node.parentId);
+            if (correctPath && node.workflowId !== correctPath) {
+                nodesToRepair.push({ node, correctWorkflowId: correctPath, parentFolderId: node.parentId });
+            }
+        }
+
+        if (nodesToRepair.length === 0) {
+            return;
+        }
+
+        // Group repairs by parent folder for batch saving
+        const repairsByFolder = new Map<string, Array<{ node: Node; correctWorkflowId: string }>>();
+        for (const repair of nodesToRepair) {
+            if (!repairsByFolder.has(repair.parentFolderId)) {
+                repairsByFolder.set(repair.parentFolderId, []);
+            }
+            repairsByFolder.get(repair.parentFolderId)!.push(repair);
+        }
+
+        for (const [folderId, repairs] of repairsByFolder) {
+            const oldWorkflowId = repairs[0].node.workflowId;
+            const correctWorkflowId = repairs[0].correctWorkflowId;
+
+            logCanvas(`Repairing workflowId for ${repairs.length} nodes in folder "${folderId}": "${oldWorkflowId}" → "${correctWorkflowId}"`);
+
+            for (const { node, correctWorkflowId: correctId } of repairs) {
+                const oldId = node.workflowId;
+
+                // Fix file path references that used the wrong workflowId
+                const fixPath = (filePath: string | undefined): string | undefined => {
+                    if (!filePath) { return filePath; }
+                    // Handle both separator styles (Windows backslash and forward slash)
+                    const oldSegmentBack = `.tdad${path.sep}workflows${path.sep}${oldId}${path.sep}`;
+                    const correctSegmentBack = `.tdad${path.sep}workflows${path.sep}${correctId}${path.sep}`;
+                    const oldSegmentFwd = `.tdad/workflows/${oldId}/`;
+                    const correctSegmentFwd = `.tdad/workflows/${correctId}/`;
+
+                    if (filePath.includes(oldSegmentBack)) {
+                        return filePath.replace(oldSegmentBack, correctSegmentBack);
+                    }
+                    if (filePath.includes(oldSegmentFwd)) {
+                        return filePath.replace(oldSegmentFwd, correctSegmentFwd);
+                    }
+                    return filePath;
+                };
+
+                const nodeAny = node as any;
+                nodeAny.bddSpecFile = fixPath(nodeAny.bddSpecFile);
+                nodeAny.testCodeFile = fixPath(nodeAny.testCodeFile);
+                nodeAny.actionFile = fixPath(nodeAny.actionFile);
+
+                node.workflowId = correctId;
+            }
+
+            // Save repaired nodes back to the correct workflow file
+            const data = this.load(folderId, true);
+            for (const { node } of repairs) {
+                const idx = data.nodes.findIndex(n => n.id === node.id);
+                if (idx >= 0) {
+                    data.nodes[idx] = node;
+                }
+            }
+            this.save(data.nodes, data.edges, folderId);
+        }
+
+        logCanvas(`Repaired workflowId for ${nodesToRepair.length} nodes total`);
     }
 
     /**
