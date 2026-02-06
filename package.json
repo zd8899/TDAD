@@ -2,7 +2,7 @@
   "name": "tdad",
   "displayName": "TDAD - Test-Driven AI Development",
   "description": "Upgrades your AI from chaotic code generator to disciplined engineer. Enforces Plan → Spec → Test → Fix cycle where automated tests validate every line, ensuring working software, not just snippets.",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "publisher": "tdad",
   "license": "MIT",
   "icon": "icon.png",

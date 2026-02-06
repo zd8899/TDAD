@@ -5,6 +5,11 @@ All notable changes to the TDAD extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.15] - 2026-02-06
+
+### Added
+- Autopilot now skips already-passed nodes during batch automation, significantly improving execution time by avoiding redundant test runs
+
 ## [0.0.14] - 2026-02-05
 
 ### Fixed
