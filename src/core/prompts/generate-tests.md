@@ -94,10 +94,18 @@ if (items.length < 3) { test.skip(); }        // ❌ Skipping because data doesn
 const setup = await performSetupAction(page); // ✅ Call dependency action
 expect(setup.success).toBe(true);             // ✅ Assert setup worked
 
-// ROUND-TRIP VERIFICATION
+// ROUND-TRIP VERIFICATION (UI)
 await expect(page.getByText('Registered!')).toBeVisible(); // ❌ UI says success
 const login = await performLoginAction(page, { email, password }); // ✅ Verify it actually worked
 expect(login.success).toBe(true);
+
+// ROUND-TRIP VERIFICATION (API) — every mutation must be independently verified
+const created = await createItem(page, { name: 'Test' }, tdadTrace);
+expect(created.statusCode).toBe(200);           // ❌ Only checks the response — proves nothing persisted
+// ✅ Follow up with an independent read to prove the mutation actually worked:
+const fetched = await getItem(page, { id: created.itemId }, tdadTrace);
+expect(fetched.statusCode).toBe(200);
+expect(fetched.itemName).toBe('Test');           // ✅ Now we know it's real
 ```
 
 **Input Gherkin:**
@@ -198,6 +206,10 @@ test.describe('Login', () => {
     // ✅ Unconditional assertions (never wrap in if blocks)
     expect(result.statusCode).toBe(200);
     expect(result.body.userId).toBeDefined();
+
+    // ✅ Round-trip: independently verify the mutation with a follow-up read
+    const profile = await tdadTrace.request.get('/api/user/profile');
+    expect(profile.ok()).toBe(true);
   });
 {{/if}}
 
@@ -275,3 +287,4 @@ Implement `{{actionFilePath}}` and `{{testFilePath}}`.
 - [ ] No conditional assertions
 - [ ] Tests create their own prerequisites (no skipping for missing data)
 - [ ] Success tests verify outcome (round-trip), not just UI feedback
+- [ ] Every API mutation (POST/PUT/DELETE) independently verified with a follow-up GET

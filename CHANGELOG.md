@@ -5,6 +5,11 @@ All notable changes to the TDAD extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.14] - 2026-02-05
+
+### Fixed
+- Test generation prompt now enforces API round-trip verification (every mutation independently verified with a follow-up GET instead of trusting the response)
+
 ## [0.0.13] - 2026-02-05
 
 ### Fixed
