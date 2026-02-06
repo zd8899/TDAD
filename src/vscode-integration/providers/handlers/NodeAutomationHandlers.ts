@@ -491,9 +491,41 @@ export class NodeAutomationHandlers {
 
             let completedCount = 0;
             let passedCount = 0;
+            let skippedCount = 0;
 
             for (let i = 0; i < sortedNodes.length; i++) {
                 const node = sortedNodes[i];
+
+                // Skip nodes that have already passed (only when run-fix mode is included)
+                if (modes.includes('run-fix') && (node as any).status === 'passed') {
+                    logCanvas(`Skipping node ${node.title} - already passed`);
+                    skippedCount++;
+                    passedCount++;
+                    completedCount++;
+
+                    const progressMessage = `Skipped ${i + 1}/${sortedNodes.length}: ${node.title} (already passed)`;
+                    this.webview.postMessage({
+                        command: 'allNodesAutomationStatus',
+                        status: 'running',
+                        totalNodes: sortedNodes.length,
+                        currentIndex: i,
+                        currentNodeId: node.id,
+                        currentNodeTitle: node.title,
+                        message: progressMessage,
+                        skipped: true
+                    });
+                    this.notifyProgress({
+                        status: 'running',
+                        totalNodes: sortedNodes.length,
+                        currentIndex: i,
+                        currentNodeId: node.id,
+                        currentNodeTitle: node.title,
+                        message: progressMessage,
+                        skipped: true
+                    });
+                    continue;
+                }
+
                 const progressMessage = `Processing ${i + 1}/${sortedNodes.length}: ${node.title}`;
 
                 this.webview.postMessage({
@@ -523,13 +555,16 @@ export class NodeAutomationHandlers {
 
                 if (result.stopped && i < sortedNodes.length - 1) {
                     logCanvas('Automation stopped by user');
-                    const stoppedMessage = 'Automation stopped';
+                    const stoppedMessage = skippedCount > 0
+                        ? `Automation stopped (${skippedCount} skipped)`
+                        : 'Automation stopped';
                     this.webview.postMessage({
                         command: 'allNodesAutomationStatus',
                         status: 'stopped',
                         totalNodes: sortedNodes.length,
                         completedCount,
                         passedCount,
+                        skippedCount,
                         message: stoppedMessage
                     });
                     this.notifyProgress({
@@ -537,14 +572,17 @@ export class NodeAutomationHandlers {
                         totalNodes: sortedNodes.length,
                         completedCount,
                         passedCount,
+                        skippedCount,
                         message: stoppedMessage
                     });
                     return;
                 }
             }
 
-            const completedMessage = `Completed: ${passedCount}/${completedCount} passed`;
-            logCanvas(`All-nodes automation complete: ${passedCount}/${completedCount} passed`);
+            const completedMessage = skippedCount > 0
+                ? `Completed: ${passedCount}/${completedCount} passed (${skippedCount} skipped)`
+                : `Completed: ${passedCount}/${completedCount} passed`;
+            logCanvas(`All-nodes automation complete: ${passedCount}/${completedCount} passed${skippedCount > 0 ? ` (${skippedCount} skipped)` : ''}`);
 
             this.webview.postMessage({
                 command: 'allNodesAutomationStatus',
@@ -552,6 +590,7 @@ export class NodeAutomationHandlers {
                 totalNodes: sortedNodes.length,
                 completedCount,
                 passedCount,
+                skippedCount,
                 message: completedMessage
             });
             this.notifyProgress({
@@ -559,13 +598,16 @@ export class NodeAutomationHandlers {
                 totalNodes: sortedNodes.length,
                 completedCount,
                 passedCount,
+                skippedCount,
                 message: completedMessage
             });
 
             if (passedCount === completedCount) {
-                vscode.window.showInformationMessage(`✅ All ${completedCount} nodes in this folder passed!`);
+                const skipMsg = skippedCount > 0 ? ` (${skippedCount} skipped)` : '';
+                vscode.window.showInformationMessage(`✅ All ${completedCount} nodes in this folder passed!${skipMsg}`);
             } else {
-                vscode.window.showWarningMessage(`Folder automation complete: ${passedCount}/${completedCount} passed`);
+                const skipMsg = skippedCount > 0 ? ` (${skippedCount} skipped)` : '';
+                vscode.window.showWarningMessage(`Folder automation complete: ${passedCount}/${completedCount} passed${skipMsg}`);
             }
 
         } catch (error) {

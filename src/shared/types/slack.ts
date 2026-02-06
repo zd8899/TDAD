@@ -81,6 +81,8 @@ export interface AutomationProgressUpdate {
     currentNodeTitle?: string;
     completedCount?: number;
     passedCount?: number;
+    skippedCount?: number;
+    skipped?: boolean;
     message: string;
 }
 
