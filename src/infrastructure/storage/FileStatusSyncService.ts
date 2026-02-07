@@ -49,7 +49,8 @@ export class FileStatusSyncService {
      * Sync status fields for a single node
      */
     async syncNodeStatus(node: FileNode | FunctionNode): Promise<Partial<FileNode | FunctionNode>> {
-        if (!node.fileName) {
+        // Only FileNode has fileName
+        if (node.nodeType !== 'file' || !('fileName' in node) || !node.fileName) {
             return {};
         }
 

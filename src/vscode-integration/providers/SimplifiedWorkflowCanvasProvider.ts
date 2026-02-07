@@ -296,8 +296,10 @@ export class SimplifiedWorkflowCanvasProvider {
      * Handle file status updates from file watcher
      */
     private _handleFileStatusUpdate(fileName: string, updates: Partial<FileNode | FunctionNode>): void {
-        // Find node by fileName
-        const node = this._nodeManager.getNodes().find(n => n.fileName === fileName);
+        // Find node by fileName (only FileNode has fileName property)
+        const node = this._nodeManager.getNodes().find(n =>
+            n.nodeType === 'file' && 'fileName' in n && n.fileName === fileName
+        );
         if (node && (node.nodeType === 'file' || node.nodeType === 'function')) {
             Object.assign(node, updates);
             this._nodeManager.updateNode(node);
