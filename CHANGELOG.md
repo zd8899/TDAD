@@ -5,6 +5,21 @@ All notable changes to the TDAD extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.19] - 2026-02-07
+
+### Fixed
+- **Node status accuracy**: Nodes now display correct status immediately without requiring clicks. Implemented FileStatusSyncService with file system watchers for automatic status updates when files change on disk.
+- **Single source of truth**: Eliminated dual-state issue where frontend Map and backend node fields could become desynchronized.
+
+### Added
+- Four new status fields for precise file tracking: hasBddSpec, hasTestDetails, bddHasRealContent, testHasRealContent
+- New CLI agent presets: Cursor, Gemini CLI, OpenCode for expanded integration options
+
+### Changed
+- Standardized terminology from 'file' to 'feature' throughout the codebase for clarity
+- Removed frontend nodeFileStatus Map in favor of backend node fields as single source of truth
+- Refactored UI components (TDADNode, canvas-app) to read status directly from node fields
+
 ## [0.0.18] - 2026-02-07
 
 ### Fixed
