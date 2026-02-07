@@ -55,9 +55,6 @@ export interface CanvasMessageState {
     setAutopilotFolderName: (name: string) => void;
     setAutopilotDialogOpen: (open: boolean) => void;
 
-    // File status state
-    setNodeFileStatus: (fn: any) => void;
-
     // Feedback form state
     setShowFeedbackForm: (show: boolean) => void;
 
@@ -297,16 +294,10 @@ function handleNodeAutomationComplete(message: any, state: CanvasMessageState) {
     }));
 }
 
+// REMOVED: File status is now stored directly in node fields (single source of truth)
+// No need for separate frontend cache
 function handleAllNodesFileStatusLoaded(message: any, state: CanvasMessageState) {
-    if (message.fileStatusMap) {
-        state.setNodeFileStatus((prev: Map<string, any>) => {
-            const newMap = new Map(prev);
-            Object.entries(message.fileStatusMap).forEach(([id, status]) => {
-                newMap.set(id, status as { hasBddSpec: boolean; hasTestDetails: boolean; bddHasRealContent?: boolean; testHasRealContent?: boolean });
-            });
-            return newMap;
-        });
-    }
+    // This handler is no longer needed - file status is in node.hasBddSpec, node.hasTestDetails, etc.
 }
 
 function handleAllNodesAutomationStatus(message: any, state: CanvasMessageState, deps: CanvasMessageDeps) {

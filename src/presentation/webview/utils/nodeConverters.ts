@@ -11,7 +11,6 @@ interface NodeHandlers {
   edges?: any[];
   workingNodeId?: string | null;
   automationPhase?: 'bdd' | 'tests' | 'run' | 'fix' | null;
-  nodeFileStatus?: Map<string, { hasBddSpec: boolean; hasTestDetails: boolean; bddHasRealContent?: boolean; testHasRealContent?: boolean }>;
 }
 
 /**
@@ -53,6 +52,7 @@ export const convertTDADNodeToReactFlow = (
   }
 
   // Feature node - includes selection and editing
+  // Read file status directly from node fields (single source of truth)
   const nodeData = {
     node: tdadNode,
     onDelete: handlers?.onDelete,
@@ -61,10 +61,10 @@ export const convertTDADNodeToReactFlow = (
     edges: handlers?.edges || [],
     isWorking: handlers?.workingNodeId === tdadNode.id,
     automationPhase: handlers?.workingNodeId === tdadNode.id ? handlers?.automationPhase : null,
-    hasBddSpec: handlers?.nodeFileStatus?.get(tdadNode.id)?.hasBddSpec,
-    hasTestDetails: handlers?.nodeFileStatus?.get(tdadNode.id)?.hasTestDetails,
-    bddHasRealContent: handlers?.nodeFileStatus?.get(tdadNode.id)?.bddHasRealContent,
-    testHasRealContent: handlers?.nodeFileStatus?.get(tdadNode.id)?.testHasRealContent,
+    hasBddSpec: (tdadNode as any).hasBddSpec,
+    hasTestDetails: (tdadNode as any).hasTestDetails,
+    bddHasRealContent: (tdadNode as any).bddHasRealContent,
+    testHasRealContent: (tdadNode as any).testHasRealContent,
   };
 
   return {

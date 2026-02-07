@@ -5,6 +5,17 @@ All notable changes to the TDAD extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.18] - 2026-02-07
+
+### Fixed
+- **Node status display**: Fixed critical issue where nodes showed incorrect status (all grey/pending) until clicked. Implemented single source of truth for file status with new fields (hasBddSpec, hasTestDetails, bddHasRealContent, testHasRealContent) stored directly in node data. Added FileStatusSyncService with file system watchers for automatic status updates when files change. Status now persists across reloads and displays correctly for all nodes immediately without user interaction.
+
+### Changed
+- Removed frontend nodeFileStatus Map to eliminate duplicate state
+- Updated backend handlers (BddSpecHandlers, TestGenerationHandlers, TestExecutionHandlers) to set status fields when files are created/modified
+- Refactored UI components (TDADNode, canvas-app) to read status directly from node fields
+- Simplified nodeConverters and useCanvasMessages by removing file status tracking logic
+
 ## [0.0.17] - 2026-02-07
 
 ### Fixed

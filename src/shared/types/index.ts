@@ -66,6 +66,13 @@ export interface FileNode extends BaseNode {
     features: Feature[]; // File-level features with tests
     testData: any;
     status?: 'pending' | 'tests-ready' | 'generating' | 'testing' | 'passed' | 'failed';
+
+    // File status fields (single source of truth for UI progress bars)
+    hasBddSpec?: boolean;           // BDD file exists
+    hasTestDetails?: boolean;       // Test file exists
+    bddHasRealContent?: boolean;    // BDD has AI-generated content (not scaffold)
+    testHasRealContent?: boolean;   // Test has AI-generated content (not scaffold)
+
     generatedFilePath?: string;
     actionFile?: string; // Sprint 9: Separate action file
     actionType?: 'ui' | 'api' | 'db'; // Sprint 9: Action type
@@ -93,6 +100,13 @@ export interface FunctionNode extends BaseNode {
     features: Feature[]; // Function-specific features with tests
     testData: any;
     status?: 'pending' | 'tests-ready' | 'generating' | 'testing' | 'passed' | 'failed';
+
+    // File status fields (single source of truth for UI progress bars)
+    hasBddSpec?: boolean;           // BDD file exists
+    hasTestDetails?: boolean;       // Test file exists
+    bddHasRealContent?: boolean;    // BDD has AI-generated content (not scaffold)
+    testHasRealContent?: boolean;   // Test has AI-generated content (not scaffold)
+
     startLine?: number; // Line number where function starts in file
     endLine?: number; // Line number where function ends in file
     actionFile?: string; // Sprint 9: Separate action file

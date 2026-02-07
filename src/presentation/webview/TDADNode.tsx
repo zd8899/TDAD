@@ -28,16 +28,9 @@ const TDADNode: React.FC<NodeProps<TDADNodeData>> = ({ data, selected }) => {
   // Calculate dependency count from edges (edges where this node is the target)
   const dependencyCount = edges.filter(e => e.target === node.id).length;
 
-  // Use props if available, otherwise fall back to status-based detection
-  const hasBddFeatures = hasBddSpec ?? (
-    (node.features && node.features.length > 0) ||
-    ['spec-saved', 'ready-to-test', 'tests-ready', 'testing', 'passed', 'failed'].includes(node.status || '')
-  );
-
-  const hasTests = hasTestDetails ?? (
-    (node.features && node.features.some(f => f.tests && f.tests.length > 0)) ||
-    ['tests-ready', 'ready-to-test', 'testing', 'passed', 'failed'].includes(node.status || '')
-  );
+  // Single source of truth: read status directly from node fields (no fallback needed)
+  const hasBddFeatures = hasBddSpec ?? false;
+  const hasTests = hasTestDetails ?? false;
 
   // 3-bar progress states based on FILE STATE:
   // - Grey: No file exists

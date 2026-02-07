@@ -216,6 +216,9 @@ export class BddSpecHandlers {
             if (node) {
                 (node as any).bddSpecFile = filePath;
                 (node as any).status = 'spec-saved';
+                // Update file status fields (single source of truth)
+                (node as any).hasBddSpec = true;
+                (node as any).bddHasRealContent = bddSpec.length > 0 && !bddSpec.includes('# TODO: Add more scenarios based on requirements');
                 this.nodeManager.updateNode(node);
             }
 

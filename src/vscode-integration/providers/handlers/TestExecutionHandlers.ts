@@ -177,9 +177,13 @@ export class TestExecutionHandlers {
                 vscode.window.showWarningMessage(`⚠️ No tests found for "${node.title}". Check test file and Playwright configuration.`);
             } else if (testResults.every(r => r.passed)) {
                 (node as any).status = 'passed';
+                // Update file status fields when tests pass (real content confirmed)
+                (node as any).testHasRealContent = true;
                 vscode.window.showInformationMessage(`✅ All tests passed for "${node.title}" (${passedCount}/${totalCount})`);
             } else {
                 (node as any).status = 'failed';
+                // Update file status fields when tests fail (real content confirmed)
+                (node as any).testHasRealContent = true;
                 vscode.window.showWarningMessage(`❌ Some tests failed for "${node.title}" (${passedCount}/${totalCount} passed)`);
             }
 

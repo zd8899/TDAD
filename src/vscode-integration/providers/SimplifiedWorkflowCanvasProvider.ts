@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { TestResult } from '../../shared/types';
+import { TestResult, FileNode, FunctionNode } from '../../shared/types';
 import { AutomationProgressUpdate } from '../../shared/types/slack';
 import { logCanvas, logError } from '../../shared/utils/Logger';
 import { FeatureMapStorage } from '../../infrastructure/storage/FeatureMapStorage';
+import { FileStatusSyncService } from '../../infrastructure/storage/FileStatusSyncService';
 import { SimpleNodeManager } from './SimpleNodeManager';
 import { SimpleWorkflowLoader } from './SimpleWorkflowLoader';
 import { TestRunner } from '../testing/TestRunner';
@@ -44,6 +45,7 @@ export class SimplifiedWorkflowCanvasProvider {
     private _workflowLoader!: SimpleWorkflowLoader;
     private _testRunner: TestRunner;
     private _testOrchestrator: TestOrchestrator;
+    private _fileStatusSync!: FileStatusSyncService;
 
     // Handler classes
     private _testWorkflowHandlers!: TestWorkflowHandlers;
@@ -147,6 +149,16 @@ export class SimplifiedWorkflowCanvasProvider {
                 this._settingsHandlers
             );
 
+            // Initialize file status sync service with file watchers
+            const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (workspacePath) {
+                this._fileStatusSync = new FileStatusSyncService(workspacePath);
+                this._fileStatusSync.initialize((fileName, updates) => {
+                    this._handleFileStatusUpdate(fileName, updates);
+                });
+                this._disposables.push({ dispose: () => this._fileStatusSync.dispose() });
+            }
+
             await this._loadCanvas();
 
             this._panel.webview.html = await this._getHtmlForWebview();
@@ -247,6 +259,12 @@ export class SimplifiedWorkflowCanvasProvider {
             });
         }
 
+        // Sync file status for all nodes after loading
+        if (this._fileStatusSync) {
+            const fileNodes = data.nodes.filter(n => n.nodeType === 'file' || n.nodeType === 'function') as (FileNode | FunctionNode)[];
+            await this._syncFileStatusForNodes(fileNodes);
+        }
+
         this._panel.webview.postMessage({
             command: 'loadNodes',
             nodes: nodesToSend,
@@ -254,6 +272,37 @@ export class SimplifiedWorkflowCanvasProvider {
             currentFolderId: this._currentFolderId,
             breadcrumbPath: this._breadcrumbPath
         });
+    }
+
+    /**
+     * Sync file status fields for all nodes (asynchronous)
+     */
+    private async _syncFileStatusForNodes(nodes: (FileNode | FunctionNode)[]): Promise<void> {
+        if (!this._fileStatusSync) {return;}
+
+        const updates = await this._fileStatusSync.syncAllNodes(nodes);
+
+        // Apply updates to nodes
+        updates.forEach((nodeUpdates, nodeId) => {
+            const node = this._nodeManager.getNodeById(nodeId);
+            if (node) {
+                Object.assign(node, nodeUpdates);
+                this._nodeManager.updateNode(node);
+            }
+        });
+    }
+
+    /**
+     * Handle file status updates from file watcher
+     */
+    private _handleFileStatusUpdate(fileName: string, updates: Partial<FileNode | FunctionNode>): void {
+        // Find node by fileName
+        const node = this._nodeManager.getNodes().find(n => n.fileName === fileName);
+        if (node && (node.nodeType === 'file' || node.nodeType === 'function')) {
+            Object.assign(node, updates);
+            this._nodeManager.updateNode(node);
+            logCanvas(`[FileStatusSync] Updated node ${node.id} (${fileName}):`, updates);
+        }
     }
 
     private _setupMessageHandlers() {

@@ -106,9 +106,6 @@ const CanvasApp: React.FC = () => {
   // All available nodes for dependency picker (fetched on demand)
   const [dependencyPickerNodes, setDependencyPickerNodes] = useState<Node[]>([]);
 
-  // File status per node - tracks which nodes have BDD spec and test files, and if they have real content
-  const [nodeFileStatus, setNodeFileStatus] = useState<Map<string, { hasBddSpec: boolean; hasTestDetails: boolean; bddHasRealContent?: boolean; testHasRealContent?: boolean }>>(new Map());
-
   // Sprint 13: Agent Orchestrator state
   const [automationStatus, setAutomationStatus] = useState<'idle' | 'running' | 'paused' | 'completed' | 'error'>('idle');
   const [automationMessage, setAutomationMessage] = useState<string>('');
@@ -183,7 +180,6 @@ const CanvasApp: React.FC = () => {
     setAutopilotPendingCount,
     setAutopilotFolderName,
     setAutopilotDialogOpen,
-    setNodeFileStatus,
     setShowFeedbackForm,
     setPendingTemplateUpdates
   };
@@ -224,22 +220,6 @@ const CanvasApp: React.FC = () => {
     showNotification
   );
 
-  // Update nodeFileStatus when selected node's file info changes
-  useEffect(() => {
-    if (selectedNodeId && nodeActionsState) {
-      setNodeFileStatus(prev => {
-        const newMap = new Map(prev);
-        newMap.set(selectedNodeId, {
-          hasBddSpec: !!nodeActionsState.bddSpec,
-          hasTestDetails: nodeActionsState.testDetails.length > 0,
-          bddHasRealContent: nodeActionsState.bddHasRealContent,
-          testHasRealContent: nodeActionsState.testHasRealContent
-        });
-        return newMap;
-      });
-    }
-  }, [selectedNodeId, nodeActionsState.bddSpec, nodeActionsState.testDetails, nodeActionsState.bddHasRealContent, nodeActionsState.testHasRealContent]);
-
   // Navigation handlers for folder nodes
   const handleNavigateIntoFolder = useCallback((folderId: string) => {
     // Save current viewport before navigating away
@@ -278,8 +258,7 @@ const CanvasApp: React.FC = () => {
     onNavigateInto: handleNavigateIntoFolder,
     edges: edges,
     workingNodeId: workingNodeId,
-    automationPhase: automationPhase,
-    nodeFileStatus: nodeFileStatus
+    automationPhase: automationPhase
   };
 
   // NOTE: filterVisibleNodes is now defined earlier (before handleMessage) to avoid initialization order issues
@@ -313,10 +292,10 @@ const CanvasApp: React.FC = () => {
     }
   }, [allNodes, nodeCounter, filterVisibleNodes]);
 
-  // Real-time status updates - re-render nodes when nodeFileStatus changes
-  // This ensures progress bars and status indicators update during auto/manual test runs
+  // Real-time status updates - re-render nodes when automation status changes
+  // This ensures progress bars and status indicators update during automation
   useEffect(() => {
-    if (nodeFileStatus.size > 0 && allNodes.length > 0) {
+    if (allNodes.length > 0 && (workingNodeId || automationPhase)) {
       const visibleNodes = filterVisibleNodes(allNodes);
       setNodes(currentNodes => {
         const selectedNodeIds = new Set(currentNodes.filter(n => n.selected).map(n => n.id));
@@ -335,7 +314,7 @@ const CanvasApp: React.FC = () => {
         });
       });
     }
-  }, [workingNodeId, automationPhase, nodeFileStatus, allNodes, nodeCounter, filterVisibleNodes]);
+  }, [workingNodeId, automationPhase, allNodes, nodeCounter, filterVisibleNodes]);
 
   // Auto-layout on first load if all nodes are at (0,0) + fit view to center
   // Also triggers when navigating into folders (currentFolderId changes)

@@ -157,9 +157,6 @@ export class SingleNodeOrchestrator {
             message: `Phase 1/${phaseCount}: Starting automation for ${node.title}...`
         });
 
-        // Save state for recovery
-        this.persistState();
-
         try {
             if (modes.includes('bdd')) {
                 await this.writeBddTask();
@@ -188,8 +185,6 @@ export class SingleNodeOrchestrator {
             status: 'stopped',
             message: 'Automation stopped by user'
         });
-
-        this.taskFileManager.clearAutomationState();
     }
 
     /**
@@ -548,8 +543,6 @@ export class SingleNodeOrchestrator {
             message: `Fix attempt ${newRetry}/${this.maxRetries} for ${this.targetNode.title}...`
         });
 
-        this.persistState();
-
         await this.writeFixTask(results);
     }
 
@@ -668,8 +661,6 @@ export class SingleNodeOrchestrator {
             );
         }
 
-        this.taskFileManager.clearAutomationState();
-
         if (nodeId) {
             this.callbacks.onComplete?.(nodeId, passed);
         }
@@ -696,19 +687,6 @@ export class SingleNodeOrchestrator {
     private updateState(updates: Partial<SingleNodeState>): void {
         this.state = { ...this.state, ...updates };
         this.callbacks.onStatusChange?.(this.getState());
-    }
-
-    /**
-     * Persist state to disk
-     */
-    private persistState(): void {
-        this.taskFileManager.saveAutomationState({
-            processedNodes: [],
-            failedNodes: [],
-            currentNodeId: this.state.nodeId,
-            isRunning: this.state.status === 'running',
-            phase: this.state.phase
-        });
     }
 
     // --- Helper Methods ---

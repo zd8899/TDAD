@@ -222,6 +222,9 @@ export class TestGenerationHandlers {
             (node as any).testCodeFile = testFilePath;
             (node as any).actionFile = actionFilePath;
             (node as any).status = 'ready-to-test';
+            // Update file status fields (single source of truth)
+            (node as any).hasTestDetails = testFileCreated;
+            (node as any).testHasRealContent = false; // Scaffold template, not real content yet
             this.nodeManager.setNodes(
                 this.nodeManager.getNodes().map(n => n.id === nodeId ? node : n)
             );
