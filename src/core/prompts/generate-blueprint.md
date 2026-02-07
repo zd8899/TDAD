@@ -1,5 +1,5 @@
 # SYSTEM RULES: TDAD PROTOCOL
-**CRITICAL:** You are building a **TDAD Dependency Graph**, NOT a standard React app.
+You are building a **TDAD Dependency Graph**, NOT a standard React app.
 
 ## Rules
 1. **Node = Testable Behavior:** Each node is a small, testable piece of functionality that can be verified with BDD scenarios and Playwright tests.
@@ -28,7 +28,7 @@
 
 # Project Blueprint Generator
 
-**CRITICAL:** You are an agent with file operations. **EXECUTE** file creation directly - do NOT just output code blocks.
+You are an agent with file operations. **EXECUTE** file creation directly - do NOT just output code blocks.
 
 ---
 
@@ -77,15 +77,15 @@ Create a **flexible hierarchy** based on project complexity:
 **Complex app (3+ levels):**
 ```
 .tdad/workflows/
-├── root.workflow.json        # Top-level folders
+├── root.workflow.json           # Top-level folders
 ├── backend/
-│   ├── backend.workflow.json # Sub-folders
+│   ├── backend.workflow.json    # Sub-folders (workflowId: "root")
 │   ├── auth/
-│   │   └── auth.workflow.json
+│   │   └── auth.workflow.json   # Features (workflowId: "backend/auth")
 │   └── api/
-│       └── api.workflow.json
+│       └── api.workflow.json    # Features (workflowId: "backend/api")
 └── frontend/
-    └── frontend.workflow.json
+    └── frontend.workflow.json   # Features (workflowId: "frontend")
 ```
 
 **Rule:** Each `workflow.json` can contain:
@@ -123,11 +123,11 @@ Contains folder nodes (or feature nodes for simple apps):
 | Field | Required | Description |
 |-------|----------|-------------|
 | `id` | ✅ | Unique kebab-case (e.g., `auth`, `profile`) |
-| `workflowId` | ✅ | Always `"root"` |
+| `workflowId` | ✅ | Parent's `folderPath`. Use `"root"` for folders in root.workflow.json, or parent's full path for nested (e.g., `"backend"`) |
 | `title` | ✅ | Display name |
 | `description` | ✅ | Brief purpose |
 | `nodeType` | ✅ | **Must be `"folder"`** |
-| `folderPath` | ✅ | Same as `id` |
+| `folderPath` | ✅ | Full path from root: `"auth"` for top-level, `"backend/auth"` for nested |
 | `position` | ✅ | `{x, y}` - grid layout (x: 100, 300, 500...) |
 | `dependencies` | ✅ | Always `[]` |
 
@@ -212,7 +212,7 @@ Contains **ALL feature nodes** for this folder:
 | Field | Required | Description |
 |-------|----------|-------------|
 | `id` | ✅ | Unique kebab-case verb-noun (e.g., `validate-email`, `create-user`) |
-| `workflowId` | ✅ | Folder name (e.g., `"auth"`) |
+| `workflowId` | ✅ | Parent folder's `folderPath`: `"auth"` for top-level, `"backend/auth"` for nested |
 | `title` | ✅ | Display name (verb + noun) |
 | `description` | ✅ | **BDD-ready description** (see format below) |
 | `nodeType` | ✅ | **Must be `"feature"`** |
@@ -223,7 +223,7 @@ Contains **ALL feature nodes** for this folder:
 
 ---
 
-## Description Format (CRITICAL for BDD/Test Generation)
+## Description Format (for BDD/Test Generation)
 
 Descriptions must be **detailed enough to write BDD scenarios and Playwright tests** without guessing.
 
@@ -319,7 +319,8 @@ Create edges for **same-folder dependencies only**:
 - [ ] API descriptions include: endpoint, request body, response format, error codes
 - [ ] UI descriptions include: user action, visual feedback, success/failure states
 - [ ] `nodeType` = `"folder"` in root, `"feature"` in folder workflows
-- [ ] `workflowId` = `"root"` for folders, folder name for features
+- [ ] `workflowId` = parent folder's full `folderPath` (NOT just folder name)
+- [ ] `folderPath` = full path from root for folders
 - [ ] `fileName` exists for all feature nodes
 - [ ] Dependencies reference valid node IDs
 - [ ] Edges only for same-folder dependencies

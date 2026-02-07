@@ -574,9 +574,9 @@ ${isESM ? 'export { test, expect };' : 'module.exports = { test, expect };'}
                 return {
                     name: normalizedName,
                     url,
-                    // UI project should match both UI and API tests (browser tests)
-                    // API project matches only backend API tests
-                    grep: normalizedName === 'ui' ? '/\\[(UI|API)-\\d+\\]/' :
+                    // UI project matches only UI tests
+                    // API project matches only API tests
+                    grep: normalizedName === 'ui' ? '/\\[UI-\\d+\\]/' :
                           normalizedName === 'api' ? '/\\[API-\\d+\\]/' :
                           null
                 };
@@ -586,8 +586,8 @@ ${isESM ? 'export { test, expect };' : 'module.exports = { test, expect };'}
             : [{ name: 'default', url: 'http://localhost:5173', grep: null }];
 
         const projectsConfig = projects.map(p => {
-            const grepComment = p.name === 'ui' ? 'Match [UI-xxx] and [API-xxx] tests' :
-                               p.name === 'api' ? 'Match [API-xxx] tests' : '';
+            const grepComment = p.name === 'ui' ? 'Match [UI-xxx] tests only' :
+                               p.name === 'api' ? 'Match [API-xxx] tests only' : '';
             const grepLine = p.grep ? `\n      grep: ${p.grep},  // ${grepComment}` : '';
             return `    {
       name: '${p.name}',

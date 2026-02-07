@@ -694,6 +694,18 @@ export class TestRunner implements ITestRunner {
     }
 
     /**
+     * Clean up Playwright test output for better readability
+     * - Remove redundant folder name from file name (e.g., expose-scenario-crud-endpoints/expose-scenario-crud-endpoints.test.js -> expose-scenario-crud-endpoints.test.js)
+     * - Remove column number from line reference (e.g., :933:3 -> :933)
+     */
+    private cleanTestOutput(output: string): string {
+        return output.replace(
+            /([\\\/])([^\\\/]+)[\\\/]\2\.test\.js:(\d+):\d+/g,
+            '$1$2.test.js:$3'
+        );
+    }
+
+    /**
      * Execute command with timeout support using spawn for better process control
      */
     private executeCommandWithTimeout(command: string, workingDir: string, timeout: number, env?: Record<string, string>): Promise<{
@@ -760,8 +772,9 @@ export class TestRunner implements ITestRunner {
             this.currentProcess.stderr?.on('data', (data) => {
                 const text = data.toString();
                 stderr += text;
-                // Stream test progress in real-time (list reporter uses stderr)
-                this.outputChannel.append(text);
+                // Clean up test paths before displaying (remove .tdad/workflows prefix and redundant folder names)
+                const cleaned = this.cleanTestOutput(text);
+                this.outputChannel.append(cleaned);
             });
 
             // Track start time for progress logging

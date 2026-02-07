@@ -14,6 +14,8 @@ import { SimpleNodeManager } from '../SimpleNodeManager';
 import { SingleNodeOrchestrator, SingleNodeState } from '../../../core/services/SingleNodeOrchestrator';
 import { TestExecutionHandlers } from './TestExecutionHandlers';
 import { CLIAgentLauncher } from '../../CLIAgentLauncher';
+import { AutomationStateManager } from '../../../infrastructure/storage/AutomationStateManager';
+import { AutomationState } from '../../../shared/types/automation';
 
 export class NodeAutomationHandlers {
     private singleNodeOrchestrator: SingleNodeOrchestrator | null = null;
@@ -472,142 +474,213 @@ export class NodeAutomationHandlers {
 
             logCanvas(`Found ${sortedNodes.length} nodes to process`);
 
-            const startMessage = `Starting automation for ${sortedNodes.length} nodes...`;
+            // Generate automation state file (user can edit this before/during execution)
+            const workspaceRoot = this.storage.getWorkspaceRoot();
+            const stateManager = new AutomationStateManager(workspaceRoot);
+
+            const state = stateManager.generateState(
+                sortedNodes,
+                sortedNodes[0]?.workflowId || 'unknown',
+                folderId,
+                modes
+            );
+
+            // Auto-skip nodes based on skipStatuses from state file
+            sortedNodes.forEach(node => {
+                const nodeStatus = (node as any).status;
+
+                if (state.skipStatuses.includes(nodeStatus)) {
+                    const skipReason = `status="${nodeStatus}" (in skipStatuses)`;
+                    stateManager.skipNode(state, node.id, skipReason);
+                    logCanvas(`Auto-marked for skip: ${node.title} - ${skipReason}`);
+                }
+            });
+
+            stateManager.saveState(state);
+
+            logCanvas(`Automation state saved to: ${stateManager.getStateFilePath()}`);
+            vscode.window.showInformationMessage(
+                `📋 Automation queue created: ${stateManager.getStateFilePath()}`,
+                'Open File'
+            ).then(selection => {
+                if (selection === 'Open File') {
+                    vscode.workspace.openTextDocument(stateManager.getStateFilePath()).then(doc => {
+                        vscode.window.showTextDocument(doc);
+                    });
+                }
+            });
+
+            const startMessage = `Starting automation for ${stateManager.getTotalNodes(state)} nodes (${stateManager.getSkippedCount(state)} already passed)...`;
             this.webview.postMessage({
                 command: 'allNodesAutomationStatus',
                 status: 'running',
-                totalNodes: sortedNodes.length,
+                totalNodes: stateManager.getTotalNodes(state),
                 currentIndex: 0,
                 message: startMessage
             });
             this.notifyProgress({
                 status: 'running',
-                totalNodes: sortedNodes.length,
+                totalNodes: stateManager.getTotalNodes(state),
                 currentIndex: 0,
                 message: startMessage
             });
 
-            vscode.window.showInformationMessage(`🚀 Starting automation for ${sortedNodes.length} nodes`);
+            vscode.window.showInformationMessage(`🚀 ${startMessage}`);
 
-            let completedCount = 0;
-            let passedCount = 0;
-            let skippedCount = 0;
+            stateManager.startAutomation(state);
 
-            for (let i = 0; i < sortedNodes.length; i++) {
-                const node = sortedNodes[i];
+            // Execute nodes from automation state (can be modified during execution)
+            while (true) {
+                // Reload state file each iteration (user can modify it live!)
+                const currentState = stateManager.loadState();
+                if (!currentState) {
+                    logCanvas('Automation state file deleted - stopping');
+                    break;
+                }
 
-                // Skip nodes that have already passed (only when run-fix mode is included)
-                if (modes.includes('run-fix') && (node as any).status === 'passed') {
-                    logCanvas(`Skipping node ${node.title} - already passed`);
-                    skippedCount++;
-                    passedCount++;
-                    completedCount++;
+                if (currentState.status === 'stopped') {
+                    logCanvas('Automation stopped via state file');
+                    break;
+                }
 
-                    const progressMessage = `Skipped ${i + 1}/${sortedNodes.length}: ${node.title} (already passed)`;
-                    this.webview.postMessage({
-                        command: 'allNodesAutomationStatus',
-                        status: 'running',
-                        totalNodes: sortedNodes.length,
-                        currentIndex: i,
-                        currentNodeId: node.id,
-                        currentNodeTitle: node.title,
-                        message: progressMessage,
-                        skipped: true
-                    });
-                    this.notifyProgress({
-                        status: 'running',
-                        totalNodes: sortedNodes.length,
-                        currentIndex: i,
-                        currentNodeId: node.id,
-                        currentNodeTitle: node.title,
-                        message: progressMessage,
-                        skipped: true
-                    });
+                const nextNode = stateManager.getNextNode(currentState);
+                if (!nextNode) {
+                    logCanvas('No more pending nodes - completing automation');
+                    stateManager.completeAutomation(currentState);
+                    break;
+                }
+
+                // Find the actual node object
+                const node = allNodes.find(n => n.id === nextNode.id);
+                if (!node) {
+                    logCanvas(`Node ${nextNode.id} not found - marking as failed`);
+                    stateManager.updateNodeStatus(currentState, nextNode.id, 'failed', 'Node not found');
                     continue;
                 }
 
-                const progressMessage = `Processing ${i + 1}/${sortedNodes.length}: ${node.title}`;
+                const progressMessage = `Processing ${currentState.currentIndex + 1}/${stateManager.getTotalNodes(currentState)}: ${node.title}`;
+                logCanvas(progressMessage);
 
                 this.webview.postMessage({
                     command: 'allNodesAutomationStatus',
                     status: 'running',
-                    totalNodes: sortedNodes.length,
-                    currentIndex: i,
+                    totalNodes: stateManager.getTotalNodes(currentState),
+                    currentIndex: currentState.currentIndex,
                     currentNodeId: node.id,
                     currentNodeTitle: node.title,
                     message: progressMessage
                 });
                 this.notifyProgress({
                     status: 'running',
-                    totalNodes: sortedNodes.length,
-                    currentIndex: i,
+                    totalNodes: stateManager.getTotalNodes(currentState),
+                    currentIndex: currentState.currentIndex,
                     currentNodeId: node.id,
                     currentNodeTitle: node.title,
                     message: progressMessage
                 });
 
-                const result = await this.runSingleNodeAutomationAndWait(node, modes);
+                // Mark as running
+                stateManager.updateNodeStatus(currentState, nextNode.id, 'running');
 
-                completedCount++;
-                if (result.passed) {
-                    passedCount++;
+                // Convert modes object to array for execution
+                const modesToRun: ('bdd' | 'test' | 'run-fix')[] = [];
+                if (nextNode.modes.bdd) { modesToRun.push('bdd'); }
+                if (nextNode.modes.test) { modesToRun.push('test'); }
+                if (nextNode.modes.runFix) { modesToRun.push('run-fix'); }
+
+                // Execute the node with retry logic
+                let result = await this.runSingleNodeAutomationAndWait(node, modesToRun);
+
+                // Handle retries if failed
+                if (!result.passed && !result.stopped) {
+                    const maxRetries = currentState.retryConfig.maxRetries;
+                    const currentRetries = nextNode.retries || 0;
+
+                    if (currentRetries < maxRetries) {
+                        logCanvas(`Node ${node.title} failed - retry ${currentRetries + 1}/${maxRetries}`);
+
+                        // Update retry count
+                        nextNode.retries = currentRetries + 1;
+                        stateManager.saveState(currentState);
+
+                        // Wait before retry
+                        await new Promise(resolve => setTimeout(resolve, currentState.retryConfig.retryDelayMs));
+
+                        // Retry execution
+                        result = await this.runSingleNodeAutomationAndWait(node, modesToRun);
+                    }
                 }
 
-                if (result.stopped && i < sortedNodes.length - 1) {
+                // Update state based on result
+                if (result.stopped) {
+                    stateManager.stopAutomation(currentState);
                     logCanvas('Automation stopped by user');
-                    const stoppedMessage = skippedCount > 0
-                        ? `Automation stopped (${skippedCount} skipped)`
+
+                    const stoppedMessage = stateManager.getSkippedCount(currentState) > 0
+                        ? `Automation stopped (${stateManager.getSkippedCount(currentState)} skipped)`
                         : 'Automation stopped';
+
                     this.webview.postMessage({
                         command: 'allNodesAutomationStatus',
                         status: 'stopped',
-                        totalNodes: sortedNodes.length,
-                        completedCount,
-                        passedCount,
-                        skippedCount,
+                        totalNodes: stateManager.getTotalNodes(currentState),
+                        completedCount: stateManager.getCompletedCount(currentState),
+                        passedCount: stateManager.getPassedCount(currentState),
+                        skippedCount: stateManager.getSkippedCount(currentState),
                         message: stoppedMessage
                     });
                     this.notifyProgress({
                         status: 'stopped',
-                        totalNodes: sortedNodes.length,
-                        completedCount,
-                        passedCount,
-                        skippedCount,
+                        totalNodes: stateManager.getTotalNodes(currentState),
+                        completedCount: stateManager.getCompletedCount(currentState),
+                        passedCount: stateManager.getPassedCount(currentState),
+                        skippedCount: stateManager.getSkippedCount(currentState),
                         message: stoppedMessage
                     });
                     return;
                 }
+
+                stateManager.updateNodeStatus(
+                    currentState,
+                    nextNode.id,
+                    result.passed ? 'passed' : 'failed'
+                );
             }
 
-            const completedMessage = skippedCount > 0
-                ? `Completed: ${passedCount}/${completedCount} passed (${skippedCount} skipped)`
-                : `Completed: ${passedCount}/${completedCount} passed`;
-            logCanvas(`All-nodes automation complete: ${passedCount}/${completedCount} passed${skippedCount > 0 ? ` (${skippedCount} skipped)` : ''}`);
+            // Final state
+            const finalState = stateManager.loadState();
+            if (finalState) {
+                const completedMessage = stateManager.getSkippedCount(finalState) > 0
+                    ? `Completed: ${stateManager.getPassedCount(finalState)}/${stateManager.getCompletedCount(finalState)} passed (${stateManager.getSkippedCount(finalState)} skipped)`
+                    : `Completed: ${stateManager.getPassedCount(finalState)}/${stateManager.getCompletedCount(finalState)} passed`;
 
-            this.webview.postMessage({
-                command: 'allNodesAutomationStatus',
-                status: 'completed',
-                totalNodes: sortedNodes.length,
-                completedCount,
-                passedCount,
-                skippedCount,
-                message: completedMessage
-            });
-            this.notifyProgress({
-                status: 'completed',
-                totalNodes: sortedNodes.length,
-                completedCount,
-                passedCount,
-                skippedCount,
-                message: completedMessage
-            });
+                logCanvas(`All-nodes automation complete: ${stateManager.getPassedCount(finalState)}/${stateManager.getCompletedCount(finalState)} passed${stateManager.getSkippedCount(finalState) > 0 ? ` (${stateManager.getSkippedCount(finalState)} skipped)` : ''}`);
 
-            if (passedCount === completedCount) {
-                const skipMsg = skippedCount > 0 ? ` (${skippedCount} skipped)` : '';
-                vscode.window.showInformationMessage(`✅ All ${completedCount} nodes in this folder passed!${skipMsg}`);
-            } else {
-                const skipMsg = skippedCount > 0 ? ` (${skippedCount} skipped)` : '';
-                vscode.window.showWarningMessage(`Folder automation complete: ${passedCount}/${completedCount} passed${skipMsg}`);
+                this.webview.postMessage({
+                    command: 'allNodesAutomationStatus',
+                    status: 'completed',
+                    totalNodes: stateManager.getTotalNodes(finalState),
+                    completedCount: stateManager.getCompletedCount(finalState),
+                    passedCount: stateManager.getPassedCount(finalState),
+                    skippedCount: stateManager.getSkippedCount(finalState),
+                    message: completedMessage
+                });
+                this.notifyProgress({
+                    status: 'completed',
+                    totalNodes: stateManager.getTotalNodes(finalState),
+                    completedCount: stateManager.getCompletedCount(finalState),
+                    passedCount: stateManager.getPassedCount(finalState),
+                    skippedCount: stateManager.getSkippedCount(finalState),
+                    message: completedMessage
+                });
+
+                if (stateManager.getPassedCount(finalState) === stateManager.getCompletedCount(finalState)) {
+                    const skipMsg = stateManager.getSkippedCount(finalState) > 0 ? ` (${stateManager.getSkippedCount(finalState)} skipped)` : '';
+                    vscode.window.showInformationMessage(`✅ All ${stateManager.getCompletedCount(finalState)} nodes in this folder passed!${skipMsg}`);
+                } else {
+                    const skipMsg = stateManager.getSkippedCount(finalState) > 0 ? ` (${stateManager.getSkippedCount(finalState)} skipped)` : '';
+                    vscode.window.showWarningMessage(`Folder automation complete: ${stateManager.getPassedCount(finalState)}/${stateManager.getCompletedCount(finalState)} passed${skipMsg}`);
+                }
             }
 
         } catch (error) {
