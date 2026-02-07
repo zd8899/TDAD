@@ -7,7 +7,7 @@
 
 import * as vscode from 'vscode';
 import { logCanvas, logError } from '../../../shared/utils/Logger';
-import { TestSettings, CLISettings, ProjectContext } from '../../../shared/types';
+import { TestSettings, CLISettings, ProjectContext, DEFAULT_PERMISSION_FLAGS } from '../../../shared/types';
 import { ScaffoldingService } from '../../../core/workflows/ScaffoldingService';
 
 export class SettingsHandlers {
@@ -177,7 +177,10 @@ export class SettingsHandlers {
             const presetCommands: Record<string, string> = {
                 'claude': 'claude "{prompt}"',
                 'aider': 'aider --message "{prompt}"',
-                'codex': 'codex "{prompt}"'
+                'codex': 'codex "{prompt}"',
+                'cursor': 'cursor --ask "{prompt}"',
+                'gemini': 'gemini "{prompt}"',
+                'opencode': 'opencode "{prompt}"'
             };
 
             // Save preset selection
@@ -188,14 +191,17 @@ export class SettingsHandlers {
                 await config.update('agent.cli.command', presetCommands[preset], vscode.ConfigurationTarget.Workspace);
             }
 
-            // Update permission flags
+            // Update permission flags - set the auto flag for the selected CLI only
             const currentFlags = config.get<any>('agent.cli.permissionFlags') || {};
             const updatedFlags = {
-                ...currentFlags,
-                claude: { dangerouslySkipPermissions: skipPermissions },
-                aider: currentFlags.aider || { yesAlways: false, autoCommit: false },
-                codex: currentFlags.codex || { autoApprove: false }
+                ...DEFAULT_PERMISSION_FLAGS,
+                ...currentFlags
             };
+            // Apply the skipPermissions toggle to the selected preset's flag
+            if (preset === 'claude') {updatedFlags.claude = { dangerouslySkipPermissions: skipPermissions };}
+            else if (preset === 'aider') {updatedFlags.aider = { ...updatedFlags.aider, yesAlways: skipPermissions };}
+            else if (preset === 'codex') {updatedFlags.codex = { fullAuto: skipPermissions };}
+            else if (preset === 'gemini') {updatedFlags.gemini = { yolo: skipPermissions };}
             await config.update('agent.cli.permissionFlags', updatedFlags, vscode.ConfigurationTarget.Workspace);
 
             logCanvas(`CLI settings saved from dialog: preset=${preset}, skipPermissions=${skipPermissions}`);

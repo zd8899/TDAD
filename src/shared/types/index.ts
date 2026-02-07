@@ -242,18 +242,27 @@ export interface CLIPermissionFlags {
         autoCommit: boolean;                  // --auto-commits (auto-commit changes)
     };
     codex: {
-        autoApprove: boolean;                 // --auto-approve (approve all changes)
+        fullAuto: boolean;                    // --full-auto (low-friction automation preset)
     };
     cursor: {
-        autoApprove: boolean;                 // --auto-approve (approve all changes)
+        autoApprove: boolean;                 // No CLI flag available (Cursor always asks for approval)
     };
     gemini: {
-        autoConfirm: boolean;                 // --yes (auto-confirm prompts)
+        yolo: boolean;                        // --yolo (auto-approve all actions)
     };
     opencode: {
-        autoApprove: boolean;                 // --auto-approve (approve all changes)
+        autoApprove: boolean;                 // No CLI flag available (OpenCode uses config-based permissions)
     };
 }
+
+export const DEFAULT_PERMISSION_FLAGS: CLIPermissionFlags = {
+    claude: { dangerouslySkipPermissions: false },
+    aider: { yesAlways: false, autoCommit: false },
+    codex: { fullAuto: false },
+    cursor: { autoApprove: false },
+    gemini: { yolo: false },
+    opencode: { autoApprove: false }
+};
 
 /**
  * CLI/Autopilot settings for hands-free automation

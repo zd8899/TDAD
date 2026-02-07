@@ -6,7 +6,7 @@
  */
 
 import * as vscode from 'vscode';
-import { Node, TestResult } from '../../../shared/types';
+import { Node, TestResult, DEFAULT_PERMISSION_FLAGS } from '../../../shared/types';
 import { AutomationProgressUpdate } from '../../../shared/types/slack';
 import { logCanvas, logError } from '../../../shared/utils/Logger';
 import { FeatureMapStorage } from '../../../infrastructure/storage/FeatureMapStorage';
@@ -433,20 +433,12 @@ export class NodeAutomationHandlers {
 
             // Read CLI settings from config for the dialog
             const config = vscode.workspace.getConfiguration('tdad');
-            const defaultPermissionFlags = {
-                claude: { dangerouslySkipPermissions: false },
-                aider: { yesAlways: false, autoCommit: false },
-                codex: { autoApprove: false },
-                cursor: { autoApprove: false },
-                gemini: { autoConfirm: false },
-                opencode: { autoApprove: false }
-            };
             const savedFlags = config.get<any>('agent.cli.permissionFlags');
             const cliSettings = {
                 enabled: config.get<boolean>('agent.cli.enabled', true),
                 command: config.get<string>('agent.cli.command', 'claude "{prompt}"'),
                 preset: config.get<string>('agent.cli.preset', 'claude'),
-                permissionFlags: savedFlags ? { ...defaultPermissionFlags, ...savedFlags } : defaultPermissionFlags
+                permissionFlags: savedFlags ? { ...DEFAULT_PERMISSION_FLAGS, ...savedFlags } : DEFAULT_PERMISSION_FLAGS
             };
 
             this.webview.postMessage({

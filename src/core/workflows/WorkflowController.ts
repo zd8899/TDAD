@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { Node, TestSettings, CLISettings, ProjectContext } from '../../shared/types';
+import { Node, TestSettings, CLISettings, ProjectContext, DEFAULT_PERMISSION_FLAGS } from '../../shared/types';
 import { ITestRunner } from '../testing/ITestRunner';
 // MVP-ONLY: Removed non-MVP imports (NodeCreator, NodeManager, CodeGenerator, TestCaseGenerator, FeatureGenerator)
 import { logAI } from '../../shared/utils/Logger';
@@ -80,20 +80,12 @@ export class WorkflowController {
         const urls = config.get<Record<string, string>>('test.urls') || {};
 
         // CLI/Autopilot settings with permission flags
-        const defaultPermissionFlags = {
-            claude: { dangerouslySkipPermissions: false },
-            aider: { yesAlways: false, autoCommit: false },
-            codex: { autoApprove: false },
-            cursor: { autoApprove: false },
-            gemini: { autoConfirm: false },
-            opencode: { autoApprove: false }
-        };
         const savedFlags = config.get<any>('agent.cli.permissionFlags');
         const cliSettings: CLISettings = {
             enabled: config.get<boolean>('agent.cli.enabled', true),
             command: config.get<string>('agent.cli.command', 'claude "{prompt}"'),
             preset: config.get<string>('agent.cli.preset', 'claude'),
-            permissionFlags: savedFlags ? { ...defaultPermissionFlags, ...savedFlags } : defaultPermissionFlags
+            permissionFlags: savedFlags ? { ...DEFAULT_PERMISSION_FLAGS, ...savedFlags } : DEFAULT_PERMISSION_FLAGS
         };
 
         // We cannot read back secrets, only indicate presence

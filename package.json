@@ -304,7 +304,10 @@
               "autoCommit": false
             },
             "codex": {
-              "autoApprove": false
+              "fullAuto": false
+            },
+            "gemini": {
+              "yolo": false
             }
           },
           "description": "CLI-specific permission flags for hands-free automation"

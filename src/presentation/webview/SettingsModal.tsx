@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { CLIPermissionFlags, DEFAULT_PERMISSION_FLAGS } from '../../shared/types';
 
 interface TestSettings {
     types: string[];
@@ -15,28 +16,6 @@ interface ProjectContext {
     databaseCustom?: string;
     sourceRoot: string;
     docsRoot: string;
-}
-
-interface CLIPermissionFlags {
-    claude: {
-        dangerouslySkipPermissions: boolean;
-    };
-    aider: {
-        yesAlways: boolean;
-        autoCommit: boolean;
-    };
-    codex: {
-        autoApprove: boolean;
-    };
-    cursor: {
-        autoApprove: boolean;
-    };
-    gemini: {
-        autoConfirm: boolean;
-    };
-    opencode: {
-        autoApprove: boolean;
-    };
 }
 
 interface CLISettings {
@@ -72,15 +51,6 @@ const CLI_PRESETS = [
     { id: 'opencode', label: 'OpenCode', baseCommand: 'opencode', command: 'opencode "{prompt}"' },
     { id: 'custom', label: 'Custom', baseCommand: '', command: '' }
 ];
-
-const DEFAULT_PERMISSION_FLAGS: CLIPermissionFlags = {
-    claude: { dangerouslySkipPermissions: false },
-    aider: { yesAlways: false, autoCommit: false },
-    codex: { autoApprove: false },
-    cursor: { autoApprove: false },
-    gemini: { autoConfirm: false },
-    opencode: { autoApprove: false }
-};
 
 const PROJECT_TYPES = [
     { value: 'web-app', label: 'Web Application' },
@@ -313,10 +283,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 if (newFlags.aider.yesAlways) {flags += '--yes ';}
                 if (newFlags.aider.autoCommit) {flags += '--auto-commits ';}
             }
-            if (selectedPreset === 'codex' && newFlags.codex.autoApprove) {flags = '--auto-approve ';}
-            if (selectedPreset === 'cursor' && newFlags.cursor.autoApprove) {flags = '--auto-approve ';}
-            if (selectedPreset === 'gemini' && newFlags.gemini.autoConfirm) {flags = '--yes ';}
-            if (selectedPreset === 'opencode' && newFlags.opencode.autoApprove) {flags = '--auto-approve ';}
+            if (selectedPreset === 'codex' && newFlags.codex.fullAuto) {flags = '--full-auto ';}
+            if (selectedPreset === 'gemini' && newFlags.gemini.yolo) {flags = '--yolo ';}
 
             if (preset && preset.baseCommand) {
                 const newCommand = preset.command.replace(preset.baseCommand, preset.baseCommand + ' ' + flags).replace(/\s+/g, ' ').trim();
@@ -627,26 +595,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 )}
                                 {selectedPreset === 'codex' && (
                                     <label style={checkboxContainerStyle}>
-                                        <input type="checkbox" checked={permissionFlags.codex.autoApprove} onChange={(e) => updatePermissionFlag('codex', 'autoApprove', e.target.checked)} />
-                                        <span>Auto Approve (--auto-approve)</span>
-                                    </label>
-                                )}
-                                {selectedPreset === 'cursor' && (
-                                    <label style={checkboxContainerStyle}>
-                                        <input type="checkbox" checked={permissionFlags.cursor.autoApprove} onChange={(e) => updatePermissionFlag('cursor', 'autoApprove', e.target.checked)} />
-                                        <span>Auto Approve (--auto-approve)</span>
+                                        <input type="checkbox" checked={permissionFlags.codex.fullAuto} onChange={(e) => updatePermissionFlag('codex', 'fullAuto', e.target.checked)} />
+                                        <span>Full Auto (--full-auto)</span>
                                     </label>
                                 )}
                                 {selectedPreset === 'gemini' && (
                                     <label style={checkboxContainerStyle}>
-                                        <input type="checkbox" checked={permissionFlags.gemini.autoConfirm} onChange={(e) => updatePermissionFlag('gemini', 'autoConfirm', e.target.checked)} />
-                                        <span>Auto Confirm (--yes)</span>
-                                    </label>
-                                )}
-                                {selectedPreset === 'opencode' && (
-                                    <label style={checkboxContainerStyle}>
-                                        <input type="checkbox" checked={permissionFlags.opencode.autoApprove} onChange={(e) => updatePermissionFlag('opencode', 'autoApprove', e.target.checked)} />
-                                        <span>Auto Approve (--auto-approve)</span>
+                                        <input type="checkbox" checked={permissionFlags.gemini.yolo} onChange={(e) => updatePermissionFlag('gemini', 'yolo', e.target.checked)} />
+                                        <span>Auto Approve (--yolo)</span>
                                     </label>
                                 )}
                             </div>

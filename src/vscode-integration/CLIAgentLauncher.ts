@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { logger } from '../shared/utils/Logger';
+import { CLIPermissionFlags, DEFAULT_PERMISSION_FLAGS } from '../shared/types';
 
 /**
  * CLIAgentLauncher - Hands-Free Automation for CLI Agents
@@ -14,25 +15,6 @@ import { logger } from '../shared/utils/Logger';
  * - Aider: aider --message "{prompt}"
  * - Custom: any CLI command with {prompt} and {file} placeholders
  */
-
-export interface CLIPermissionFlags {
-    claude: {
-        dangerouslySkipPermissions: boolean;
-    };
-    aider: {
-        yesAlways: boolean;
-        autoCommit: boolean;
-    };
-    codex: {
-        autoApprove: boolean;
-    };
-}
-
-const DEFAULT_PERMISSION_FLAGS: CLIPermissionFlags = {
-    claude: { dangerouslySkipPermissions: false },
-    aider: { yesAlways: false, autoCommit: false },
-    codex: { autoApprove: false }
-};
 
 export interface CLIAgentConfig {
     enabled: boolean;
@@ -249,8 +231,12 @@ export class CLIAgentLauncher {
                 command = command.replace(/^aider\s+/, 'aider ' + flagsToAdd);
             }
         } else if (command.startsWith('codex ') || command.includes(' codex ')) {
-            if (flags.codex.autoApprove && !command.includes('--auto-approve')) {
-                command = command.replace(/^codex\s+/, 'codex --auto-approve ');
+            if (flags.codex.fullAuto && !command.includes('--full-auto')) {
+                command = command.replace(/^codex\s+/, 'codex --full-auto ');
+            }
+        } else if (command.startsWith('gemini ') || command.includes(' gemini ')) {
+            if (flags.gemini.yolo && !command.includes('--yolo')) {
+                command = command.replace(/^gemini\s+/, 'gemini --yolo ');
             }
         }
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AutopilotModes } from '../../shared/types';
+import { AutopilotModes, CLIPermissionFlags } from '../../shared/types';
 export type AutopilotMode = 'bdd' | 'test' | 'run-fix';
 
 export type { AutopilotModes };
@@ -8,14 +8,7 @@ interface CLISettings {
   enabled: boolean;
   command: string;
   preset?: string;
-  permissionFlags?: {
-    claude: { dangerouslySkipPermissions: boolean };
-    aider: { yesAlways: boolean; autoCommit: boolean };
-    codex: { autoApprove: boolean };
-    cursor: { autoApprove: boolean };
-    gemini: { autoConfirm: boolean };
-    opencode: { autoApprove: boolean };
-  };
+  permissionFlags?: CLIPermissionFlags;
 }
 
 interface AutopilotConfirmDialogProps {
@@ -87,9 +80,13 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
         else {setSelectedCli('custom');}
       }
 
-      if (cliSettings.permissionFlags?.claude?.dangerouslySkipPermissions) {
-        setSkipPermissions(true);
-      }
+      // Initialize skipPermissions from the active CLI's flag
+      const flags = cliSettings.permissionFlags;
+      const activePreset = cliSettings.preset || 'claude';
+      if (activePreset === 'claude' && flags?.claude?.dangerouslySkipPermissions) {setSkipPermissions(true);}
+      else if (activePreset === 'aider' && flags?.aider?.yesAlways) {setSkipPermissions(true);}
+      else if (activePreset === 'codex' && flags?.codex?.fullAuto) {setSkipPermissions(true);}
+      else if (activePreset === 'gemini' && flags?.gemini?.yolo) {setSkipPermissions(true);}
     }
   }, [cliSettings]);
 
@@ -234,6 +231,36 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
                 onChange={(e) => setSkipPermissions(e.target.checked)}
               />
               <span>Skip Permissions (--dangerously-skip-permissions)</span>
+            </label>
+          )}
+          {selectedCli === 'aider' && (
+            <label className="autopilot-skip-permissions-label">
+              <input
+                type="checkbox"
+                checked={skipPermissions}
+                onChange={(e) => setSkipPermissions(e.target.checked)}
+              />
+              <span>Auto Confirm (--yes)</span>
+            </label>
+          )}
+          {selectedCli === 'codex' && (
+            <label className="autopilot-skip-permissions-label">
+              <input
+                type="checkbox"
+                checked={skipPermissions}
+                onChange={(e) => setSkipPermissions(e.target.checked)}
+              />
+              <span>Full Auto (--full-auto)</span>
+            </label>
+          )}
+          {selectedCli === 'gemini' && (
+            <label className="autopilot-skip-permissions-label">
+              <input
+                type="checkbox"
+                checked={skipPermissions}
+                onChange={(e) => setSkipPermissions(e.target.checked)}
+              />
+              <span>Auto Approve (--yolo)</span>
             </label>
           )}
         </div>
