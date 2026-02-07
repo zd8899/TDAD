@@ -5,6 +5,12 @@ All notable changes to the TDAD extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.22] - 2026-02-07
+
+### Changed
+- **CLI permission flags refactor**: Centralized permission flag types (`CLIPermissionFlags`, `DEFAULT_PERMISSION_FLAGS`) in `/src/shared/types/index.ts` for consistency across Autopilot confirm dialog and settings handler
+- Updated CLI flag names for better clarity and standardization
+
 ## [0.0.21] - 2026-02-07
 
 ### Added
