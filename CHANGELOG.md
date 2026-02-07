@@ -5,6 +5,18 @@ All notable changes to the TDAD extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.16] - 2026-02-06
+
+### Added
+- `folderPath` field to automation state nodes for better readability when working with nested folders
+
+### Changed
+- Modes object now displays on a single line in automation-state.json for cleaner formatting
+- Test output paths are now cleaner with redundant folder names removed
+
+### Fixed
+- Test output now shows proper [API-xxx] tags for API tests (was incorrectly showing [UI] tag)
+
 ## [0.0.15] - 2026-02-06
 
 ### Added
