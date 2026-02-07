@@ -12,7 +12,7 @@ import { Node, NodeInput } from '../types';
  */
 export function getNodeInputs(node: Node): NodeInput[] {
     const nodeType = (node as any).nodeType;
-    if (nodeType === 'file' || nodeType === 'function') {
+    if (nodeType === 'feature') {
         return (node as any).inputs || [];
     }
     return [];

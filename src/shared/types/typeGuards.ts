@@ -10,7 +10,7 @@ export function isFolderNode(node: Node): node is FolderNode {
 }
 
 function hasFeatures(node: Node): node is FileNode | FunctionNode {
-    return node.nodeType === 'file' || node.nodeType === 'function';
+    return node.nodeType === 'feature' || node.nodeType === 'function';
 }
 
 /**

@@ -7,10 +7,14 @@ export type { AutopilotModes };
 interface CLISettings {
   enabled: boolean;
   command: string;
+  preset?: string;
   permissionFlags?: {
     claude: { dangerouslySkipPermissions: boolean };
     aider: { yesAlways: boolean; autoCommit: boolean };
     codex: { autoApprove: boolean };
+    cursor: { autoApprove: boolean };
+    gemini: { autoConfirm: boolean };
+    opencode: { autoApprove: boolean };
   };
 }
 
@@ -36,7 +40,10 @@ const MODE_OPTIONS: { value: AutopilotMode; label: string; icon: string; descrip
 const CLI_PRESETS = [
   { id: 'claude', label: 'Claude Code' },
   { id: 'aider', label: 'Aider' },
-  { id: 'codex', label: 'Codex CLI' },
+  { id: 'codex', label: 'Codex CLI (OpenAI)' },
+  { id: 'cursor', label: 'Cursor' },
+  { id: 'gemini', label: 'Gemini CLI (Google)' },
+  { id: 'opencode', label: 'OpenCode' },
   { id: 'custom', label: 'Custom' }
 ];
 
@@ -62,11 +69,19 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
 
   // Initialize from cliSettings
   useEffect(() => {
-    if (cliSettings?.command) {
-      if (cliSettings.command.includes('claude')) {setSelectedCli('claude');}
-      else if (cliSettings.command.includes('aider')) {setSelectedCli('aider');}
-      else if (cliSettings.command.includes('codex')) {setSelectedCli('codex');}
-      else {setSelectedCli('custom');}
+    if (cliSettings) {
+      // Use saved preset if available, otherwise try to detect from command
+      if (cliSettings.preset) {
+        setSelectedCli(cliSettings.preset);
+      } else if (cliSettings.command) {
+        if (cliSettings.command.includes('claude')) {setSelectedCli('claude');}
+        else if (cliSettings.command.includes('aider')) {setSelectedCli('aider');}
+        else if (cliSettings.command.includes('codex')) {setSelectedCli('codex');}
+        else if (cliSettings.command.includes('cursor')) {setSelectedCli('cursor');}
+        else if (cliSettings.command.includes('gemini')) {setSelectedCli('gemini');}
+        else if (cliSettings.command.includes('opencode')) {setSelectedCli('opencode');}
+        else {setSelectedCli('custom');}
+      }
 
       if (cliSettings.permissionFlags?.claude?.dangerouslySkipPermissions) {
         setSkipPermissions(true);

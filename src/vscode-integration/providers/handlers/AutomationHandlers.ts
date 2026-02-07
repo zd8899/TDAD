@@ -97,8 +97,8 @@ export class AutomationHandlers {
                     }
                 },
                 onTaskWritten: (taskFile: string, taskDescription: string) => {
-                    const launcher = CLIAgentLauncher.getInstance(workspaceRoot);
-                    launcher.triggerAgent(taskFile, taskDescription);
+                    // const launcher = CLIAgentLauncher.getInstance(workspaceRoot);
+                    // launcher.triggerAgent(taskFile, taskDescription);
                 }
             });
 

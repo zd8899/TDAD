@@ -19,7 +19,7 @@ export interface Feature {
 }
 
 // Node Types for different structures
-export type NodeType = 'folder' | 'file' | 'function';
+export type NodeType = 'folder' | 'feature' | 'function';
 
 // Test execution status
 export type TestStatus = 'passed' | 'failed' | 'pending' | 'not_tested';
@@ -58,7 +58,7 @@ export interface FolderNode extends BaseNode {
 
 // File Node - represents an actual code file
 export interface FileNode extends BaseNode {
-    nodeType: 'file';
+    nodeType: 'feature';
     filePath: string; // Full path to file (e.g., "src/services/auth.ts")
     language: string; // Language/type (typescript, javascript, python, etc.)
     fileName?: string; // Auto-generated file name
@@ -276,6 +276,15 @@ export interface CLIPermissionFlags {
     codex: {
         autoApprove: boolean;                 // --auto-approve (approve all changes)
     };
+    cursor: {
+        autoApprove: boolean;                 // --auto-approve (approve all changes)
+    };
+    gemini: {
+        autoConfirm: boolean;                 // --yes (auto-confirm prompts)
+    };
+    opencode: {
+        autoApprove: boolean;                 // --auto-approve (approve all changes)
+    };
 }
 
 /**
@@ -284,6 +293,7 @@ export interface CLIPermissionFlags {
 export interface CLISettings {
     enabled: boolean;         // Auto-trigger CLI agent
     command: string;          // CLI command template with {file} and {prompt} placeholders
+    preset?: string;          // Selected preset: 'claude' | 'aider' | 'codex' | 'custom'
     permissionFlags: CLIPermissionFlags;  // CLI-specific automation flags
 }
 

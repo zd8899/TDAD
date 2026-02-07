@@ -147,6 +147,11 @@ export class SettingsHandlers {
             await config.update('agent.cli.enabled', cliSettings.enabled, vscode.ConfigurationTarget.Workspace);
             await config.update('agent.cli.command', cliSettings.command, vscode.ConfigurationTarget.Workspace);
 
+            // Save preset selection
+            if (cliSettings.preset !== undefined) {
+                await config.update('agent.cli.preset', cliSettings.preset, vscode.ConfigurationTarget.Workspace);
+            }
+
             // Save permission flags for each CLI
             if (cliSettings.permissionFlags) {
                 await config.update('agent.cli.permissionFlags', cliSettings.permissionFlags, vscode.ConfigurationTarget.Workspace);

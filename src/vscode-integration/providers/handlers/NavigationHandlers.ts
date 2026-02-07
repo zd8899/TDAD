@@ -16,7 +16,7 @@ import { SimpleWorkflowLoader } from '../SimpleWorkflowLoader';
 interface BreadcrumbItem {
     nodeId: string;
     title: string;
-    nodeType: 'folder' | 'file' | 'function';
+    nodeType: 'folder' | 'feature';
 }
 
 export class NavigationHandlers {

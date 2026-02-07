@@ -20,7 +20,7 @@ import { PromptHandlers } from './handlers/PromptHandlers';
 interface BreadcrumbItem {
     nodeId: string;
     title: string;
-    nodeType: 'folder' | 'file' | 'function';
+    nodeType: 'folder' | 'feature';
 }
 
 /**
@@ -261,7 +261,9 @@ export class SimplifiedWorkflowCanvasProvider {
 
         // Sync file status for all nodes after loading
         if (this._fileStatusSync) {
-            const fileNodes = data.nodes.filter(n => n.nodeType === 'file' || n.nodeType === 'function') as (FileNode | FunctionNode)[];
+            const fileNodes = data.nodes.filter(n =>
+                n.nodeType === 'feature'
+            ) as (FileNode | FunctionNode)[];
             await this._syncFileStatusForNodes(fileNodes);
         }
 
@@ -298,9 +300,9 @@ export class SimplifiedWorkflowCanvasProvider {
     private _handleFileStatusUpdate(fileName: string, updates: Partial<FileNode | FunctionNode>): void {
         // Find node by fileName (only FileNode has fileName property)
         const node = this._nodeManager.getNodes().find(n =>
-            n.nodeType === 'file' && 'fileName' in n && n.fileName === fileName
+            n.nodeType === 'feature' && 'fileName' in n && (n as any).fileName === fileName
         );
-        if (node && (node.nodeType === 'file' || node.nodeType === 'function')) {
+        if (node) {
             Object.assign(node, updates);
             this._nodeManager.updateNode(node);
             logCanvas(`[FileStatusSync] Updated node ${node.id} (${fileName}):`, updates);
@@ -871,7 +873,7 @@ export class SimplifiedWorkflowCanvasProvider {
 
             const node = {
                 id: nodeData.id || `node-${Date.now()}`,
-                nodeType: nodeData.nodeType || 'file',
+                nodeType: nodeData.nodeType || 'feature',
                 title: nodeData.title || 'Untitled',
                 description: nodeData.description || '',
                 position: nodeData.position || { x: 100, y: 100 },

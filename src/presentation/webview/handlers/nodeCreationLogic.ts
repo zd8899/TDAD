@@ -224,7 +224,7 @@ function handleCreateFeature(
         workflowId: '',
         title: formData.title,
         description: formData.description,
-        nodeType: 'file' as const,
+        nodeType: 'feature' as const,
         filePath: '',
         fileName: formData.title.toLowerCase().replace(/[\s/\\]+/g, '-'),
         language: 'typescript',

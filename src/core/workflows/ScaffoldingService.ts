@@ -216,7 +216,7 @@ ${gherkinComment}test.describe('${toTitleCase(nodeName)}', () => {
         });
 
         for (const node of workflow.nodes) {
-            if (node.nodeType !== 'file') {
+            if (node.nodeType !== 'feature') {
                 continue;
             }
 

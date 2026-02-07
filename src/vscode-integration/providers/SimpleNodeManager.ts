@@ -579,8 +579,8 @@ export class SimpleNodeManager {
 
         // Only FileNode and FunctionNode support inputs/outputs
         if (
-            (sourceNode.nodeType !== 'file' && sourceNode.nodeType !== 'function') ||
-            (targetNode.nodeType !== 'file' && targetNode.nodeType !== 'function')
+            (sourceNode.nodeType !== 'feature') ||
+            (targetNode.nodeType !== 'feature')
         ) {
             return { valid: false, error: 'Only file and function nodes support input/output connections' };
         }
@@ -650,7 +650,7 @@ export class SimpleNodeManager {
         outputName: string
     ): void {
         const node = this._nodes.find(n => n.id === nodeId);
-        if (!node || (node.nodeType !== 'file' && node.nodeType !== 'function')) {
+        if (!node || (node.nodeType !== 'feature' && node.nodeType !== 'function')) {
             return;
         }
 
@@ -675,7 +675,7 @@ export class SimpleNodeManager {
      */
     public clearInputSource(nodeId: string, inputId: string): void {
         const node = this._nodes.find(n => n.id === nodeId);
-        if (!node || (node.nodeType !== 'file' && node.nodeType !== 'function')) {
+        if (!node || (node.nodeType !== 'feature' && node.nodeType !== 'function')) {
             return;
         }
 

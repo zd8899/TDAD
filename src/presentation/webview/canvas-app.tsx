@@ -52,7 +52,7 @@ import { handleNodeFormSubmit, NodeFormData } from './handlers/nodeCreationLogic
 interface BreadcrumbItem {
     nodeId: string;
     title: string;
-    nodeType: 'folder' | 'file' | 'function';
+    nodeType: 'folder' | 'feature';
 }
 
 // Hierarchical node types: folders and features
@@ -422,7 +422,7 @@ const CanvasApp: React.FC = () => {
     if (isIOConnection && connection.sourceHandle && connection.targetHandle) {
       // Find the target node and update its input configuration
       const targetNode = allNodes.find(n => n.id === connection.target);
-      if (targetNode && (targetNode.nodeType === 'file' || targetNode.nodeType === 'function')) {
+      if (targetNode && (targetNode.nodeType === 'feature' || targetNode.nodeType === 'function')) {
         const nodeWithIO = targetNode as any;
         const targetInput = nodeWithIO.inputs?.find((inp: any) => inp.id === connection.targetHandle);
 

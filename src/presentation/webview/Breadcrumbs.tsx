@@ -4,7 +4,7 @@ import '../../styles/breadcrumbs.css';
 interface BreadcrumbItem {
     nodeId: string;
     title: string;
-    nodeType: 'folder' | 'file' | 'function';
+    nodeType: 'folder' | 'feature';
 }
 
 interface BreadcrumbsProps {

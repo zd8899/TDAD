@@ -59,7 +59,7 @@ export async function handleNodeCommand(
         const newNode: Partial<Node> = {
             id: `node-${Date.now()}`,
             workflowId: 'default',
-            nodeType: 'file',
+            nodeType: 'feature',
             title: nodeName,
             description: `Created via Slack by <@${context.userId}>`,
             position: { x: 100, y: 100 }

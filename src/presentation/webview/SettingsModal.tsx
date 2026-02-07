@@ -28,11 +28,21 @@ interface CLIPermissionFlags {
     codex: {
         autoApprove: boolean;
     };
+    cursor: {
+        autoApprove: boolean;
+    };
+    gemini: {
+        autoConfirm: boolean;
+    };
+    opencode: {
+        autoApprove: boolean;
+    };
 }
 
 interface CLISettings {
     enabled: boolean;
     command: string;
+    preset?: string;
     permissionFlags?: CLIPermissionFlags;
 }
 
@@ -56,14 +66,20 @@ type SettingsTab = 'project' | 'testing' | 'autopilot' | 'prompts' | 'slack';
 const CLI_PRESETS = [
     { id: 'claude', label: 'Claude Code', baseCommand: 'claude', command: 'claude "Read .tdad/NEXT_TASK.md and execute the task. When done, write DONE to .tdad/AGENT_DONE.md"' },
     { id: 'aider', label: 'Aider', baseCommand: 'aider', command: 'aider --message "{prompt}"' },
-    { id: 'codex', label: 'Codex CLI', baseCommand: 'codex', command: 'codex "{prompt}"' },
+    { id: 'codex', label: 'Codex CLI (OpenAI)', baseCommand: 'codex', command: 'codex "{prompt}"' },
+    { id: 'cursor', label: 'Cursor', baseCommand: 'cursor', command: 'cursor --ask "{prompt}"' },
+    { id: 'gemini', label: 'Gemini CLI (Google)', baseCommand: 'gemini', command: 'gemini "{prompt}"' },
+    { id: 'opencode', label: 'OpenCode', baseCommand: 'opencode', command: 'opencode "{prompt}"' },
     { id: 'custom', label: 'Custom', baseCommand: '', command: '' }
 ];
 
 const DEFAULT_PERMISSION_FLAGS: CLIPermissionFlags = {
     claude: { dangerouslySkipPermissions: false },
     aider: { yesAlways: false, autoCommit: false },
-    codex: { autoApprove: false }
+    codex: { autoApprove: false },
+    cursor: { autoApprove: false },
+    gemini: { autoConfirm: false },
+    opencode: { autoApprove: false }
 };
 
 const PROJECT_TYPES = [
@@ -170,9 +186,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             const cs = settingsData.cliSettings;
             setCLIEnabled(cs.enabled !== false);
             setCLICommand(cs.command || CLI_PRESETS[0].command);
-            // Detect which preset matches
-            const matchingPreset = CLI_PRESETS.find(p => p.command === cs.command);
-            setSelectedPreset(matchingPreset?.id || 'custom');
+            // Use saved preset if available, otherwise try to detect
+            if (cs.preset) {
+                setSelectedPreset(cs.preset);
+            } else {
+                const matchingPreset = CLI_PRESETS.find(p => p.command === cs.command);
+                setSelectedPreset(matchingPreset?.id || 'custom');
+            }
             // Load permission flags
             if (cs.permissionFlags) {
                 setPermissionFlags({
@@ -225,6 +245,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 cliSettings: {
                     enabled: cliEnabled,
                     command: cliCommand,
+                    preset: selectedPreset,
                     permissionFlags
                 }
             });
@@ -293,7 +314,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 if (newFlags.aider.autoCommit) {flags += '--auto-commits ';}
             }
             if (selectedPreset === 'codex' && newFlags.codex.autoApprove) {flags = '--auto-approve ';}
-            
+            if (selectedPreset === 'cursor' && newFlags.cursor.autoApprove) {flags = '--auto-approve ';}
+            if (selectedPreset === 'gemini' && newFlags.gemini.autoConfirm) {flags = '--yes ';}
+            if (selectedPreset === 'opencode' && newFlags.opencode.autoApprove) {flags = '--auto-approve ';}
+
             if (preset && preset.baseCommand) {
                 const newCommand = preset.command.replace(preset.baseCommand, preset.baseCommand + ' ' + flags).replace(/\s+/g, ' ').trim();
                 setCLICommand(newCommand);
@@ -604,6 +628,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 {selectedPreset === 'codex' && (
                                     <label style={checkboxContainerStyle}>
                                         <input type="checkbox" checked={permissionFlags.codex.autoApprove} onChange={(e) => updatePermissionFlag('codex', 'autoApprove', e.target.checked)} />
+                                        <span>Auto Approve (--auto-approve)</span>
+                                    </label>
+                                )}
+                                {selectedPreset === 'cursor' && (
+                                    <label style={checkboxContainerStyle}>
+                                        <input type="checkbox" checked={permissionFlags.cursor.autoApprove} onChange={(e) => updatePermissionFlag('cursor', 'autoApprove', e.target.checked)} />
+                                        <span>Auto Approve (--auto-approve)</span>
+                                    </label>
+                                )}
+                                {selectedPreset === 'gemini' && (
+                                    <label style={checkboxContainerStyle}>
+                                        <input type="checkbox" checked={permissionFlags.gemini.autoConfirm} onChange={(e) => updatePermissionFlag('gemini', 'autoConfirm', e.target.checked)} />
+                                        <span>Auto Confirm (--yes)</span>
+                                    </label>
+                                )}
+                                {selectedPreset === 'opencode' && (
+                                    <label style={checkboxContainerStyle}>
+                                        <input type="checkbox" checked={permissionFlags.opencode.autoApprove} onChange={(e) => updatePermissionFlag('opencode', 'autoApprove', e.target.checked)} />
                                         <span>Auto Approve (--auto-approve)</span>
                                     </label>
                                 )}

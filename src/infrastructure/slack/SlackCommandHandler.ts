@@ -247,7 +247,7 @@ export class SlackCommandHandler {
             if (nodeName) {
                 const newNode: Partial<import('../../shared/types').Node> = {
                     id: `node-${Date.now()}`,
-                    nodeType: 'file',
+                    nodeType: 'feature',
                     title: nodeName,
                     description: nodeDescription || `Created via Slack`,
                     position: { x: 100, y: 100 },
