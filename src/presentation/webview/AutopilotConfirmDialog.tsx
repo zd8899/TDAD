@@ -26,7 +26,7 @@ interface AutopilotConfirmDialogProps {
   isSingleNode?: boolean;
   nodeName?: string;
   cliSettings?: CLISettings;
-  onConfirm: (modes: AutopilotModes, maxRetries: number, cliSettings?: { preset: string; skipPermissions: boolean }) => void;
+  onConfirm: (modes: AutopilotModes, maxRetries: number, cliSettings?: { preset: string; skipPermissions: boolean }, concurrency?: number, waitForDependencies?: boolean) => void;
   onCancel: () => void;
   onOpenSettings?: () => void;
 }
@@ -62,6 +62,10 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
   // Default: all modes selected
   const [selectedModes, setSelectedModes] = useState<Set<AutopilotMode>>(new Set(['bdd', 'test', 'run-fix']));
   const [maxRetries, setMaxRetries] = useState<number>(10);
+
+  // Parallel execution state (only for multi-node)
+  const [concurrency, setConcurrency] = useState<number>(1);
+  const [waitForDependencies, setWaitForDependencies] = useState<boolean>(false);
 
   // CLI selection state
   const [selectedCli, setSelectedCli] = useState<string>('claude');
@@ -107,7 +111,7 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
     if (selectedModes.has('bdd')) {orderedModes.push('bdd');}
     if (selectedModes.has('test')) {orderedModes.push('test');}
     if (selectedModes.has('run-fix')) {orderedModes.push('run-fix');}
-    onConfirm(orderedModes, maxRetries, { preset: selectedCli, skipPermissions });
+    onConfirm(orderedModes, maxRetries, { preset: selectedCli, skipPermissions }, isSingleNode ? 1 : concurrency, waitForDependencies);
   };
 
   const getMessage = () => {
@@ -182,6 +186,32 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
             />
           </label>
         </div>
+
+        {!isSingleNode && (
+          <div className="autopilot-retries-selector">
+            <label className="autopilot-retries-label">
+              Concurrent Agents:
+              <input
+                type="number"
+                min="1"
+                max="10"
+                value={concurrency}
+                onChange={(e) => setConcurrency(Math.max(1, Math.min(10, parseInt(e.target.value) || 1)))}
+                className="autopilot-retries-input"
+              />
+            </label>
+            {concurrency > 1 && (
+              <label className="autopilot-skip-permissions-label" style={{ marginTop: '6px' }}>
+                <input
+                  type="checkbox"
+                  checked={waitForDependencies}
+                  onChange={(e) => setWaitForDependencies(e.target.checked)}
+                />
+                <span>Wait for dependencies</span>
+              </label>
+            )}
+          </div>
+        )}
 
         <div className="autopilot-cli-selector">
           <label className="autopilot-cli-label">

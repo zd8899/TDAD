@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { TestResult, FileNode, FunctionNode } from '../../shared/types';
+import { TestResult, FeatureNode } from '../../shared/types';
 import { AutomationProgressUpdate } from '../../shared/types/slack';
 import { logCanvas, logError } from '../../shared/utils/Logger';
 import { FeatureMapStorage } from '../../infrastructure/storage/FeatureMapStorage';
@@ -263,7 +263,7 @@ export class SimplifiedWorkflowCanvasProvider {
         if (this._fileStatusSync) {
             const fileNodes = data.nodes.filter(n =>
                 n.nodeType === 'feature'
-            ) as (FileNode | FunctionNode)[];
+            ) as FeatureNode[];
             await this._syncFileStatusForNodes(fileNodes);
         }
 
@@ -279,7 +279,7 @@ export class SimplifiedWorkflowCanvasProvider {
     /**
      * Sync file status fields for all nodes (asynchronous)
      */
-    private async _syncFileStatusForNodes(nodes: (FileNode | FunctionNode)[]): Promise<void> {
+    private async _syncFileStatusForNodes(nodes: FeatureNode[]): Promise<void> {
         if (!this._fileStatusSync) {return;}
 
         const updates = await this._fileStatusSync.syncAllNodes(nodes);
@@ -297,8 +297,8 @@ export class SimplifiedWorkflowCanvasProvider {
     /**
      * Handle file status updates from file watcher
      */
-    private _handleFileStatusUpdate(fileName: string, updates: Partial<FileNode | FunctionNode>): void {
-        // Find node by fileName (only FileNode has fileName property)
+    private _handleFileStatusUpdate(fileName: string, updates: Partial<FeatureNode>): void {
+        // Find node by fileName (only FeatureNode has fileName property)
         const node = this._nodeManager.getNodes().find(n =>
             n.nodeType === 'feature' && 'fileName' in n && (n as any).fileName === fileName
         );
@@ -662,7 +662,9 @@ export class SimplifiedWorkflowCanvasProvider {
                             await this._testWorkflowHandlers.handleRunAllNodesAutomation(
                                 message.confirmed === true,
                                 message.allFolders === true ? null : undefined,
-                                message.modes || ['bdd', 'test', 'run-fix']
+                                message.modes || ['bdd', 'test', 'run-fix'],
+                                message.concurrency || 1,
+                                message.waitForDependencies || false
                             );
                             break;
                         }
@@ -851,6 +853,14 @@ export class SimplifiedWorkflowCanvasProvider {
         if (this._automationHandlers.isRunning()) {
             await this._automationHandlers.handleAgentDone();
         }
+    }
+
+    /**
+     * Handle per-node AGENT_DONE signal for parallel execution
+     * Called from extension.ts when .tdad/tasks/{nodeId}/AGENT_DONE.md is created/changed
+     */
+    public async handlePerNodeAgentDone(nodeId: string): Promise<void> {
+        await this._testWorkflowHandlers.handlePerNodeAgentDone(nodeId);
     }
 
     /**

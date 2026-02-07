@@ -153,4 +153,11 @@ export class TestOrchestrator {
     public hasExecuted(nodeId: string): boolean {
         return this.executionHistory.has(nodeId);
     }
+
+    /**
+     * Cancel the currently running test (kills the child process)
+     */
+    public cancelCurrentTest(): void {
+        this.testRunner.cancelCurrentTest();
+    }
 }

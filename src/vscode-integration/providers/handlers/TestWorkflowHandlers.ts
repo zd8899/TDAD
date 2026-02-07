@@ -209,6 +209,10 @@ export class TestWorkflowHandlers {
         return this.nodeAutomationHandlers.handleSingleNodeAgentDone();
     }
 
+    async handlePerNodeAgentDone(nodeId: string): Promise<void> {
+        return this.nodeAutomationHandlers.handlePerNodeAgentDone(nodeId);
+    }
+
     getSingleNodeOrchestrator(): SingleNodeOrchestrator | null {
         return this.nodeAutomationHandlers.getSingleNodeOrchestrator();
     }
@@ -217,8 +221,8 @@ export class TestWorkflowHandlers {
         return this.nodeAutomationHandlers.handleGetAutopilotInfo(_allFolders);
     }
 
-    async handleRunAllNodesAutomation(confirmed = false, targetFolderId: string | null | undefined = undefined, modes: ('bdd' | 'test' | 'run-fix')[] = ['bdd', 'test', 'run-fix']): Promise<void> {
-        return this.nodeAutomationHandlers.handleRunAllNodesAutomation(confirmed, targetFolderId, modes);
+    async handleRunAllNodesAutomation(confirmed = false, targetFolderId: string | null | undefined = undefined, modes: ('bdd' | 'test' | 'run-fix')[] = ['bdd', 'test', 'run-fix'], concurrency = 1, waitForDependencies = false): Promise<void> {
+        return this.nodeAutomationHandlers.handleRunAllNodesAutomation(confirmed, targetFolderId, modes, concurrency, waitForDependencies);
     }
 
     handleStopAllNodesAutomation(): void {

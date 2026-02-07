@@ -136,6 +136,8 @@ export function useNodeActions(
         setContextFiles(node.contextFiles || []);
         setTestDetails((node as any).testDetails || []);
         setTestError('');
+        setIsRunningAutomation(false);
+        setAutomationPhase(null);
 
         // Build file paths - fileName must be set in workflow.json (no fallback)
         const fileName = node.fileName;

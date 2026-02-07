@@ -15,10 +15,9 @@ import { SingleNodeOrchestrator, SingleNodeState } from '../../../core/services/
 import { TestExecutionHandlers } from './TestExecutionHandlers';
 import { CLIAgentLauncher } from '../../CLIAgentLauncher';
 import { AutomationStateManager } from '../../../infrastructure/storage/AutomationStateManager';
-import { AutomationState } from '../../../shared/types/automation';
 
 export class NodeAutomationHandlers {
-    private singleNodeOrchestrator: SingleNodeOrchestrator | null = null;
+    private orchestrators: Map<string, SingleNodeOrchestrator> = new Map();
     private automationProgressCallback: ((update: AutomationProgressUpdate) => void) | null = null;
 
     constructor(
@@ -213,19 +212,22 @@ export class NodeAutomationHandlers {
             }
             logCanvas(`Found node: ${node.title} (${node.id})`);
 
-            if (this.singleNodeOrchestrator?.isRunning()) {
-                logCanvas(`[WARN] Orchestrator already running - blocking new automation`);
-                vscode.window.showWarningMessage('Single-node automation is already running. Stop it first.');
-                return { started: false, error: 'Automation already running. Stop it first or wait for completion.', nodeName: node.title };
+            // Only block if THIS specific node is already running (allows parallel)
+            const existingOrchestrator = this.orchestrators.get(nodeId);
+            if (existingOrchestrator?.isRunning()) {
+                logCanvas(`[WARN] Orchestrator already running for node ${nodeId}`);
+                vscode.window.showWarningMessage(`Automation already running for "${node.title}". Stop it first.`);
+                return { started: false, error: 'Automation already running for this node.', nodeName: node.title };
             }
 
             const workspaceRoot = this.storage.getWorkspaceRoot();
             const extensionPath = vscode.extensions.getExtension('tdad.tdad')?.extensionPath || this.context.extensionPath;
-            logCanvas(`Creating orchestrator: workspace=${workspaceRoot}`);
+            logCanvas(`Creating orchestrator for ${nodeId}: workspace=${workspaceRoot}`);
 
-            this.singleNodeOrchestrator = new SingleNodeOrchestrator(workspaceRoot, extensionPath);
+            const orchestrator = new SingleNodeOrchestrator(workspaceRoot, extensionPath, nodeId);
+            this.orchestrators.set(nodeId, orchestrator);
 
-            this.singleNodeOrchestrator.setTestRunner({
+            orchestrator.setTestRunner({
                 runNodeTests: async (testNode: Node, _filter: string) => {
                     const allNodes = this.nodeManager.getNodes();
                     return await this.testExecutionHandlers.runTestsAndSaveTraces(testNode, allNodes);
@@ -234,9 +236,9 @@ export class NodeAutomationHandlers {
 
             let previousPhase: string | null = null;
 
-            this.singleNodeOrchestrator.setCallbacks({
+            orchestrator.setCallbacks({
                 onStatusChange: (state: SingleNodeState) => {
-                    logCanvas(`Single-node automation status: ${state.phase} - ${state.message}`);
+                    logCanvas(`Single-node automation status [${nodeId}]: ${state.phase} - ${state.message}`);
                     this.webview.postMessage({
                         command: 'singleNodeAutomationStatus',
                         nodeId: state.nodeId,
@@ -255,8 +257,10 @@ export class NodeAutomationHandlers {
                     }
                 },
                 onComplete: (completedNodeId: string, passed: boolean) => {
-                    logCanvas(`Single-node automation complete: ${completedNodeId} - ${passed ? 'PASSED' : 'FAILED'} (modes: ${modes.join(', ')})`);
+                    logCanvas(`Single-node automation complete [${nodeId}]: ${passed ? 'PASSED' : 'FAILED'} (modes: ${modes.join(', ')})`);
                     this.checkSingleNodeFileStatus(completedNodeId);
+                    // Clean up completed orchestrator
+                    this.orchestrators.delete(nodeId);
 
                     const completedNode = this.nodeManager.getNodeById(completedNodeId);
                     if (completedNode) {
@@ -304,22 +308,23 @@ export class NodeAutomationHandlers {
                     });
                 },
                 onError: (error: Error) => {
-                    logError('CANVAS', 'Single-node automation error', error);
+                    logError('CANVAS', `Single-node automation error [${nodeId}]`, error);
                     vscode.window.showErrorMessage(`Automation error: ${error.message}`);
+                    this.orchestrators.delete(nodeId);
                 },
                 onTaskWritten: (taskFile: string, taskDescription: string) => {
-                    logCanvas(`Task written: ${taskDescription}`);
-                    vscode.window.showInformationMessage(`📝 ${taskDescription} - Check .tdad/NEXT_TASK.md`);
+                    logCanvas(`Task written [${nodeId}]: ${taskDescription}`);
+                    vscode.window.showInformationMessage(`📝 ${taskDescription}`);
 
                     const launcher = CLIAgentLauncher.getInstance(workspaceRoot);
-                    launcher.triggerAgent(taskFile, taskDescription);
+                    launcher.triggerAgent(taskFile, taskDescription, nodeId);
                 }
             });
 
             const allNodes = this.nodeManager.getAllNodes();
             const allEdges = this.storage.loadAllEdges();
 
-            await this.singleNodeOrchestrator.startSingleNode(node, allNodes, allEdges, modes);
+            await orchestrator.startSingleNode(node, allNodes, allEdges, modes);
 
             const modeLabels = modes.map(m => m === 'bdd' ? 'Plan' : m === 'test' ? 'Test' : 'Run+Fix').join(' → ');
             vscode.window.showInformationMessage(`🚀 Started automation (${modeLabels}) for "${node.title}"`);
@@ -334,37 +339,64 @@ export class NodeAutomationHandlers {
     }
 
     /**
-     * Stop single-node automation
+     * Stop single-node automation (all running orchestrators)
      */
     handleStopSingleNodeAutomation(): void {
-        // Kill CLI terminal first
         const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-        if (workspacePath) {
-            CLIAgentLauncher.getInstance(workspacePath).killTerminal();
+        const launcher = workspacePath ? CLIAgentLauncher.getInstance(workspacePath) : null;
+
+        // Cancel any running test processes first
+        this.testExecutionHandlers.cancelCurrentTest();
+
+        let stoppedCount = 0;
+        for (const [id, orchestrator] of this.orchestrators) {
+            if (orchestrator.isRunning()) {
+                orchestrator.stop();
+                launcher?.killTerminal(id);
+                stoppedCount++;
+            }
         }
 
-        if (this.singleNodeOrchestrator?.isRunning()) {
-            this.singleNodeOrchestrator.stop();
-            vscode.window.showInformationMessage('🛑 Single-node automation stopped');
+        if (stoppedCount > 0) {
+            vscode.window.showInformationMessage(`🛑 Stopped ${stoppedCount} running automation(s)`);
         } else {
             vscode.window.showWarningMessage('No automation is running');
         }
     }
 
     /**
-     * Handle agent done signal for single-node automation
+     * Handle agent done signal for legacy single-file watcher (backward compat)
+     * Routes to first running orchestrator found
      */
     async handleSingleNodeAgentDone(): Promise<void> {
-        if (this.singleNodeOrchestrator?.isRunning()) {
-            await this.singleNodeOrchestrator.onAgentDone();
+        for (const [, orchestrator] of this.orchestrators) {
+            if (orchestrator.isRunning()) {
+                await orchestrator.onAgentDone();
+                return;
+            }
         }
     }
 
     /**
-     * Get single-node orchestrator for file watcher setup
+     * Handle per-node agent done signal for parallel execution
+     */
+    async handlePerNodeAgentDone(nodeId: string): Promise<void> {
+        const orchestrator = this.orchestrators.get(nodeId);
+        if (orchestrator?.isRunning()) {
+            await orchestrator.onAgentDone();
+        }
+    }
+
+    /**
+     * Get single-node orchestrator (backward compat - returns first running)
      */
     getSingleNodeOrchestrator(): SingleNodeOrchestrator | null {
-        return this.singleNodeOrchestrator;
+        for (const [, orchestrator] of this.orchestrators) {
+            if (orchestrator.isRunning()) {
+                return orchestrator;
+            }
+        }
+        return null;
     }
 
     /**
@@ -415,12 +447,14 @@ export class NodeAutomationHandlers {
     /**
      * Run automation for all nodes
      * @param confirmed Whether the user has confirmed the action
-     * @param targetFolderId Optional folder ID to run nodes from (if null/undefined, uses current folder or all nodes)
+     * @param targetFolderId Optional folder ID to run nodes from
      * @param modes The automation modes to run
+     * @param concurrency Number of concurrent agents (1 = sequential)
+     * @param waitForDependencies Whether to wait for dependencies before starting a node
      */
-    async handleRunAllNodesAutomation(confirmed = false, targetFolderId: string | null | undefined = undefined, modes: ('bdd' | 'test' | 'run-fix')[] = ['bdd', 'test', 'run-fix']): Promise<void> {
+    async handleRunAllNodesAutomation(confirmed = false, targetFolderId: string | null | undefined = undefined, modes: ('bdd' | 'test' | 'run-fix')[] = ['bdd', 'test', 'run-fix'], concurrency = 1, waitForDependencies = false): Promise<void> {
         try {
-            logCanvas(`Starting run-all-nodes automation (modes: ${modes.join(', ')}, targetFolderId: ${targetFolderId ?? 'none'})`);
+            logCanvas(`Starting run-all-nodes automation (modes: ${modes.join(', ')}, concurrency: ${concurrency}, waitDeps: ${waitForDependencies}, targetFolderId: ${targetFolderId ?? 'none'})`);
 
             const cancelAutomation = (message: string) => {
                 logCanvas(`Cancelling automation: ${message}`);
@@ -431,8 +465,10 @@ export class NodeAutomationHandlers {
                 });
             };
 
-            if (this.singleNodeOrchestrator?.isRunning()) {
-                logCanvas('Automation already running, aborting');
+            // Check if any orchestrators are running (from batch automation)
+            const runningCount = Array.from(this.orchestrators.values()).filter(o => o.isRunning()).length;
+            if (runningCount > 0) {
+                logCanvas(`${runningCount} orchestrator(s) already running, aborting batch`);
                 vscode.window.showWarningMessage('Automation is already running. Stop it first.');
                 cancelAutomation('Already running');
                 return;
@@ -529,122 +565,140 @@ export class NodeAutomationHandlers {
 
             stateManager.startAutomation(state);
 
-            // Execute nodes from automation state (can be modified during execution)
-            while (true) {
-                // Reload state file each iteration (user can modify it live!)
-                const currentState = stateManager.loadState();
-                if (!currentState) {
-                    logCanvas('Automation state file deleted - stopping');
-                    break;
+            // Build dependency map for waitForDependencies mode
+            const dependencyMap = new Map<string, Set<string>>();
+            if (waitForDependencies) {
+                for (const node of sortedNodes) {
+                    dependencyMap.set(node.id, new Set());
                 }
-
-                if (currentState.status === 'stopped') {
-                    logCanvas('Automation stopped via state file');
-                    break;
-                }
-
-                const nextNode = stateManager.getNextNode(currentState);
-                if (!nextNode) {
-                    logCanvas('No more pending nodes - completing automation');
-                    stateManager.completeAutomation(currentState);
-                    break;
-                }
-
-                // Find the actual node object
-                const node = allNodes.find(n => n.id === nextNode.id);
-                if (!node) {
-                    logCanvas(`Node ${nextNode.id} not found - marking as failed`);
-                    stateManager.updateNodeStatus(currentState, nextNode.id, 'failed', 'Node not found');
-                    continue;
-                }
-
-                const progressMessage = `Processing ${currentState.currentIndex + 1}/${stateManager.getTotalNodes(currentState)}: ${node.title}`;
-                logCanvas(progressMessage);
-
-                this.webview.postMessage({
-                    command: 'allNodesAutomationStatus',
-                    status: 'running',
-                    totalNodes: stateManager.getTotalNodes(currentState),
-                    currentIndex: currentState.currentIndex,
-                    currentNodeId: node.id,
-                    currentNodeTitle: node.title,
-                    message: progressMessage
-                });
-                this.notifyProgress({
-                    status: 'running',
-                    totalNodes: stateManager.getTotalNodes(currentState),
-                    currentIndex: currentState.currentIndex,
-                    currentNodeId: node.id,
-                    currentNodeTitle: node.title,
-                    message: progressMessage
-                });
-
-                // Mark as running
-                stateManager.updateNodeStatus(currentState, nextNode.id, 'running');
-
-                // Convert modes object to array for execution
-                const modesToRun: ('bdd' | 'test' | 'run-fix')[] = [];
-                if (nextNode.modes.bdd) { modesToRun.push('bdd'); }
-                if (nextNode.modes.test) { modesToRun.push('test'); }
-                if (nextNode.modes.runFix) { modesToRun.push('run-fix'); }
-
-                // Execute the node with retry logic
-                let result = await this.runSingleNodeAutomationAndWait(node, modesToRun);
-
-                // Handle retries if failed
-                if (!result.passed && !result.stopped) {
-                    const maxRetries = currentState.retryConfig.maxRetries;
-                    const currentRetries = nextNode.retries || 0;
-
-                    if (currentRetries < maxRetries) {
-                        logCanvas(`Node ${node.title} failed - retry ${currentRetries + 1}/${maxRetries}`);
-
-                        // Update retry count
-                        nextNode.retries = currentRetries + 1;
-                        stateManager.saveState(currentState);
-
-                        // Wait before retry
-                        await new Promise(resolve => setTimeout(resolve, currentState.retryConfig.retryDelayMs));
-
-                        // Retry execution
-                        result = await this.runSingleNodeAutomationAndWait(node, modesToRun);
+                for (const edge of expandedEdges) {
+                    if (dependencyMap.has(edge.target)) {
+                        dependencyMap.get(edge.target)!.add(edge.source);
                     }
                 }
+            }
 
-                // Update state based on result
-                if (result.stopped) {
-                    stateManager.stopAutomation(currentState);
-                    logCanvas('Automation stopped by user');
+            // Parallel sliding window execution
+            const completedNodes = new Set<string>();
+            const runningNodes = new Map<string, Promise<{ nodeId: string; passed: boolean; stopped: boolean }>>();
+            let queueIndex = 0;
+            let automationStopped = false;
 
-                    const stoppedMessage = stateManager.getSkippedCount(currentState) > 0
-                        ? `Automation stopped (${stateManager.getSkippedCount(currentState)} skipped)`
-                        : 'Automation stopped';
+            const launchNext = (): boolean => {
+                const currentState = stateManager.loadState();
+                if (!currentState || currentState.status === 'stopped') { return false; }
 
+                while (runningNodes.size < concurrency && queueIndex < sortedNodes.length) {
+                    const stateNode = currentState.nodes.find(n => n.id === sortedNodes[queueIndex].id);
+                    const sortedNode = sortedNodes[queueIndex];
+
+                    // Skip already processed nodes
+                    if (!stateNode || stateNode.status !== 'pending') {
+                        queueIndex++;
+                        completedNodes.add(sortedNode.id);
+                        continue;
+                    }
+
+                    // If waitForDependencies, check deps are completed
+                    if (waitForDependencies) {
+                        const deps = dependencyMap.get(sortedNode.id) || new Set();
+                        const depsReady = [...deps].every(depId => completedNodes.has(depId));
+                        if (!depsReady) {
+                            queueIndex++;
+                            continue;
+                        }
+                    }
+
+                    const node = allNodes.find(n => n.id === sortedNode.id);
+                    if (!node) {
+                        stateManager.updateNodeStatus(currentState, sortedNode.id, 'failed', 'Node not found');
+                        completedNodes.add(sortedNode.id);
+                        queueIndex++;
+                        continue;
+                    }
+
+                    // Launch this node
+                    stateManager.updateNodeStatus(currentState, stateNode.id, 'running');
+
+                    const modesToRun: ('bdd' | 'test' | 'run-fix')[] = [];
+                    if (stateNode.modes.bdd) { modesToRun.push('bdd'); }
+                    if (stateNode.modes.test) { modesToRun.push('test'); }
+                    if (stateNode.modes.runFix) { modesToRun.push('run-fix'); }
+
+                    const progressMessage = `Processing ${completedNodes.size + runningNodes.size + 1}/${stateManager.getTotalNodes(currentState)}: ${node.title}`;
+                    logCanvas(progressMessage);
                     this.webview.postMessage({
                         command: 'allNodesAutomationStatus',
-                        status: 'stopped',
+                        status: 'running',
                         totalNodes: stateManager.getTotalNodes(currentState),
-                        completedCount: stateManager.getCompletedCount(currentState),
-                        passedCount: stateManager.getPassedCount(currentState),
-                        skippedCount: stateManager.getSkippedCount(currentState),
-                        message: stoppedMessage
+                        currentIndex: completedNodes.size,
+                        currentNodeId: node.id,
+                        currentNodeTitle: node.title,
+                        message: concurrency > 1 ? `[${runningNodes.size + 1} agents] ${progressMessage}` : progressMessage
                     });
                     this.notifyProgress({
-                        status: 'stopped',
+                        status: 'running',
                         totalNodes: stateManager.getTotalNodes(currentState),
-                        completedCount: stateManager.getCompletedCount(currentState),
-                        passedCount: stateManager.getPassedCount(currentState),
-                        skippedCount: stateManager.getSkippedCount(currentState),
-                        message: stoppedMessage
+                        currentIndex: completedNodes.size,
+                        currentNodeId: node.id,
+                        currentNodeTitle: node.title,
+                        message: progressMessage
                     });
-                    return;
+
+                    const promise = this.runSingleNodeAutomationAndWait(node, modesToRun, node.id)
+                        .then(result => ({ nodeId: node.id, ...result }));
+                    runningNodes.set(node.id, promise);
+                    queueIndex++;
                 }
 
-                stateManager.updateNodeStatus(
-                    currentState,
-                    nextNode.id,
-                    result.passed ? 'passed' : 'failed'
-                );
+                return true;
+            };
+
+            // Initial launch
+            if (!launchNext()) { automationStopped = true; }
+
+            // Wait for completions and launch more
+            while (runningNodes.size > 0 && !automationStopped) {
+                const result = await Promise.race([...runningNodes.values()]);
+                runningNodes.delete(result.nodeId);
+
+                if (result.stopped) {
+                    // Stop all running orchestrators
+                    for (const [id] of runningNodes) {
+                        const orch = this.orchestrators.get(id);
+                        if (orch?.isRunning()) { orch.stop(); }
+                        const wp = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+                        if (wp) { CLIAgentLauncher.getInstance(wp).killTerminal(id); }
+                    }
+                    const currentState = stateManager.loadState();
+                    if (currentState) { stateManager.stopAutomation(currentState); }
+                    automationStopped = true;
+                    break;
+                }
+
+                const currentState = stateManager.loadState();
+                if (currentState) {
+                    stateManager.updateNodeStatus(currentState, result.nodeId, result.passed ? 'passed' : 'failed');
+                }
+                completedNodes.add(result.nodeId);
+
+                // Try to launch more
+                if (!launchNext()) { automationStopped = true; }
+
+                // If waitForDependencies and queue has items left but nothing was launched,
+                // retry from beginning of remaining queue
+                if (waitForDependencies && runningNodes.size === 0 && queueIndex < sortedNodes.length) {
+                    queueIndex = 0;
+                    if (!launchNext()) { automationStopped = true; }
+                }
+            }
+
+            // Check if all nodes are processed (not stopped)
+            if (!automationStopped) {
+                const currentState = stateManager.loadState();
+                if (currentState && !stateManager.getNextNode(currentState)) {
+                    stateManager.completeAutomation(currentState);
+                }
             }
 
             // Final state
@@ -701,17 +755,20 @@ export class NodeAutomationHandlers {
 
     /**
      * Run single node automation and wait for completion
+     * @param nodeId Optional node ID for per-node file isolation (parallel execution)
      */
-    private async runSingleNodeAutomationAndWait(node: Node, modes: ('bdd' | 'test' | 'run-fix')[] = ['bdd', 'test', 'run-fix']): Promise<{ passed: boolean; stopped: boolean }> {
+    private async runSingleNodeAutomationAndWait(node: Node, modes: ('bdd' | 'test' | 'run-fix')[] = ['bdd', 'test', 'run-fix'], nodeId?: string): Promise<{ passed: boolean; stopped: boolean }> {
         return new Promise<{ passed: boolean; stopped: boolean }>((resolve) => {
             const workspaceRoot = this.storage.getWorkspaceRoot();
             const extensionPath = vscode.extensions.getExtension('tdad.tdad')?.extensionPath || process.cwd();
+            const effectiveNodeId = nodeId || node.id;
 
             let wasStopped = false;
 
-            this.singleNodeOrchestrator = new SingleNodeOrchestrator(workspaceRoot, extensionPath);
+            const orchestrator = new SingleNodeOrchestrator(workspaceRoot, extensionPath, effectiveNodeId);
+            this.orchestrators.set(effectiveNodeId, orchestrator);
 
-            this.singleNodeOrchestrator.setTestRunner({
+            orchestrator.setTestRunner({
                 runNodeTests: async (testNode: Node, _filter: string) => {
                     const allNodes = this.nodeManager.getNodes();
                     return await this.testExecutionHandlers.runTestsAndSaveTraces(testNode, allNodes);
@@ -720,7 +777,7 @@ export class NodeAutomationHandlers {
 
             let previousPhase: string | null = null;
 
-            this.singleNodeOrchestrator.setCallbacks({
+            orchestrator.setCallbacks({
                 onStatusChange: (state: SingleNodeState) => {
                     logCanvas(`[All-Nodes] ${node.title}: ${state.phase} - ${state.message}`);
 
@@ -757,6 +814,7 @@ export class NodeAutomationHandlers {
                 onComplete: (completedNodeId: string, passed: boolean) => {
                     logCanvas(`[All-Nodes] ${node.title} complete: ${passed ? 'PASSED' : 'FAILED'} (modes: ${modes.join(', ')})`);
                     this.checkSingleNodeFileStatus(completedNodeId);
+                    this.orchestrators.delete(effectiveNodeId);
 
                     const completedNode = this.nodeManager.getNodeById(completedNodeId);
                     if (completedNode) {
@@ -787,24 +845,26 @@ export class NodeAutomationHandlers {
                 },
                 onError: (error: Error) => {
                     logError('CANVAS', `[All-Nodes] Error for ${node.title}`, error);
+                    this.orchestrators.delete(effectiveNodeId);
                     if (!wasStopped) {
                         resolve({ passed: false, stopped: false });
                     }
                 },
                 onTaskWritten: (taskFile: string, taskDescription: string) => {
-                    logCanvas(`[All-Nodes] Task written: ${taskDescription}`);
+                    logCanvas(`[All-Nodes] Task written [${effectiveNodeId}]: ${taskDescription}`);
                     vscode.window.showInformationMessage(`📝 ${taskDescription}`);
 
                     const launcher = CLIAgentLauncher.getInstance(workspaceRoot);
-                    launcher.triggerAgent(taskFile, taskDescription);
+                    launcher.triggerAgent(taskFile, taskDescription, effectiveNodeId);
                 }
             });
 
             const allNodes = this.nodeManager.getAllNodes();
             const allEdges = this.storage.loadAllEdges();
 
-            this.singleNodeOrchestrator.startSingleNode(node, allNodes, allEdges, modes).catch((error) => {
+            orchestrator.startSingleNode(node, allNodes, allEdges, modes).catch((error) => {
                 logError('CANVAS', `[All-Nodes] Failed to start automation for ${node.title}`, error);
+                this.orchestrators.delete(effectiveNodeId);
                 if (!wasStopped) {
                     resolve({ passed: false, stopped: false });
                 }
@@ -813,18 +873,29 @@ export class NodeAutomationHandlers {
     }
 
     /**
-     * Stop all-nodes automation
+     * Stop all-nodes automation (stops all running orchestrators and terminals)
      */
     handleStopAllNodesAutomation(): void {
-        // Kill CLI terminal first
         const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-        if (workspacePath) {
-            CLIAgentLauncher.getInstance(workspacePath).killTerminal();
+        const launcher = workspacePath ? CLIAgentLauncher.getInstance(workspacePath) : null;
+
+        // Cancel any running test processes first
+        this.testExecutionHandlers.cancelCurrentTest();
+
+        let stoppedCount = 0;
+        for (const [id, orchestrator] of this.orchestrators) {
+            if (orchestrator.isRunning()) {
+                orchestrator.stop();
+                launcher?.killTerminal(id);
+                stoppedCount++;
+            }
         }
 
-        if (this.singleNodeOrchestrator?.isRunning()) {
-            this.singleNodeOrchestrator.stop();
-            vscode.window.showInformationMessage('🛑 All-nodes automation stopped');
+        // Also kill any remaining terminals
+        launcher?.killTerminal();
+
+        if (stoppedCount > 0) {
+            vscode.window.showInformationMessage(`🛑 Stopped ${stoppedCount} running automation(s)`);
         }
     }
 }

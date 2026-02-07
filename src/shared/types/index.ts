@@ -56,8 +56,8 @@ export interface FolderNode extends BaseNode {
     dependents?: string[]; // Sprint 7: IDs of nodes that depend on this folder
 }
 
-// File Node - represents an actual code file
-export interface FileNode extends BaseNode {
+// Feature Node - represents a testable feature
+export interface FeatureNode extends BaseNode {
     nodeType: 'feature';
     filePath: string; // Full path to file (e.g., "src/services/auth.ts")
     language: string; // Language/type (typescript, javascript, python, etc.)
@@ -83,38 +83,6 @@ export interface FileNode extends BaseNode {
     originalWorkflowId?: string; // Sprint 9: For ghost nodes, where they originally come from
 
     testFramework?: string; // Test framework to use (e.g., "jest", "pytest", "vitest")
-    lastTestRunId?: string; // Reference to most recent TestHistory entry
-
-    // Sprint 7: Input/Output System
-    inputs?: NodeInput[]; // Test data requirements
-    outputs?: NodeOutput[]; // Test data produced
-}
-
-// Function Node - represents a function/class/method in a file
-export interface FunctionNode extends BaseNode {
-    nodeType: 'function';
-    functionName: string; // Exact name in code (e.g., "validateUser")
-    functionSignature?: string; // Parameters and return type
-    parentFileId: string; // Reference to parent file node
-    preConditions: string[];
-    features: Feature[]; // Function-specific features with tests
-    testData: any;
-    status?: 'pending' | 'tests-ready' | 'generating' | 'testing' | 'passed' | 'failed';
-
-    // File status fields (single source of truth for UI progress bars)
-    hasBddSpec?: boolean;           // BDD file exists
-    hasTestDetails?: boolean;       // Test file exists
-    bddHasRealContent?: boolean;    // BDD has AI-generated content (not scaffold)
-    testHasRealContent?: boolean;   // Test has AI-generated content (not scaffold)
-
-    startLine?: number; // Line number where function starts in file
-    endLine?: number; // Line number where function ends in file
-    actionFile?: string; // Sprint 9: Separate action file
-    actionType?: 'ui' | 'api' | 'db'; // Sprint 9: Action type
-    dependencies?: string[]; // Sprint 7: IDs of nodes this function depends on
-    dependents?: string[]; // Sprint 7: IDs of nodes that depend on this function
-
-    isExported?: boolean; // Whether function is exported from file
     lastTestRunId?: string; // Reference to most recent TestHistory entry
 
     // Sprint 7: Input/Output System
@@ -148,7 +116,7 @@ export interface NodeOutput {
 }
 
 // Union type for all node types
-export type Node = FolderNode | FileNode | FunctionNode;
+export type Node = FolderNode | FeatureNode;
 
 // Sprint 5: Enhanced coverage data structures
 export interface ApiRequest {

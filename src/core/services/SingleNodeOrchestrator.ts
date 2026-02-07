@@ -44,6 +44,7 @@ export interface SingleNodeCallbacks {
 
 export class SingleNodeOrchestrator {
     private readonly workspacePath: string;
+    private readonly isolatedNodeId: string | undefined;
     private readonly taskFileManager: TaskFileManager;
     private readonly promptGenService: PromptGenerationService;
     private readonly scaffoldingService: ScaffoldingService;
@@ -67,9 +68,10 @@ export class SingleNodeOrchestrator {
     // External dependencies (injected)
     private testRunner: any = null;
 
-    constructor(workspacePath: string, extensionPath: string) {
+    constructor(workspacePath: string, extensionPath: string, nodeId?: string) {
         this.workspacePath = workspacePath;
-        this.taskFileManager = new TaskFileManager(workspacePath);
+        this.isolatedNodeId = nodeId;
+        this.taskFileManager = new TaskFileManager(workspacePath, nodeId);
         this.promptGenService = new PromptGenerationService(workspacePath, extensionPath);
         this.scaffoldingService = new ScaffoldingService();
 
@@ -292,7 +294,7 @@ export class SingleNodeOrchestrator {
             message: `Waiting for agent to generate plan for ${node.title}...`
         });
 
-        this.callbacks.onTaskWritten?.(`.tdad${path.sep}NEXT_TASK.md`, `GENERATE_BDD: ${node.title}`);
+        this.callbacks.onTaskWritten?.(this.getTaskFilePath(), `GENERATE_BDD: ${node.title}`);
     }
 
     /**
@@ -442,7 +444,7 @@ export class SingleNodeOrchestrator {
             message: `Waiting for agent to generate tests for ${node.title}...`
         });
 
-        this.callbacks.onTaskWritten?.(`.tdad${path.sep}NEXT_TASK.md`, `GENERATE_TESTS: ${node.title}`);
+        this.callbacks.onTaskWritten?.(this.getTaskFilePath(), `GENERATE_TESTS: ${node.title}`);
     }
 
     /**
@@ -488,6 +490,13 @@ export class SingleNodeOrchestrator {
 
         try {
             const results = await this.testRunner.runNodeTests(this.targetNode, '');
+
+            // Check if automation was stopped while tests were running
+            if (this.state.status !== 'running') {
+                logger.log('SINGLE-NODE-ORCHESTRATOR', 'Automation stopped during test execution, aborting');
+                return;
+            }
+
             const allPassed = results.length > 0 && results.every((r: TestResult) => r.passed);
 
             // Store results on node for Golden Packet
@@ -601,7 +610,7 @@ export class SingleNodeOrchestrator {
             message: `Waiting for agent to fix ${node.title} (attempt ${this.state.currentRetry}/${this.maxRetries})...`
         });
 
-        this.callbacks.onTaskWritten?.(`.tdad${path.sep}NEXT_TASK.md`, `FIX: ${node.title} (${this.state.currentRetry}/${this.maxRetries})`);
+        this.callbacks.onTaskWritten?.(this.getTaskFilePath(), `FIX: ${node.title} (${this.state.currentRetry}/${this.maxRetries})`);
     }
 
     /**
@@ -690,6 +699,14 @@ export class SingleNodeOrchestrator {
     }
 
     // --- Helper Methods ---
+
+    /** Get the relative task file path (per-node or legacy) */
+    private getTaskFilePath(): string {
+        if (this.isolatedNodeId) {
+            return `.tdad${path.sep}tasks${path.sep}${this.isolatedNodeId}${path.sep}NEXT_TASK.md`;
+        }
+        return `.tdad${path.sep}NEXT_TASK.md`;
+    }
 
     private getFileName(node: Node): string {
         return FileNameGenerator.getNodeFileName(node as any);

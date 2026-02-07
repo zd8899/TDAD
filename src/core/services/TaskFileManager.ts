@@ -34,23 +34,33 @@ export interface AgentResponse {
 export class TaskFileManager {
     private readonly workspacePath: string;
     private readonly tdadDir: string;
+    private readonly taskDir: string;
     private readonly nextTaskFile: string;
     private readonly agentDoneFile: string;
+    private readonly nodeId: string | undefined;
 
-    constructor(workspacePath: string) {
+    constructor(workspacePath: string, nodeId?: string) {
         this.workspacePath = workspacePath;
+        this.nodeId = nodeId;
         this.tdadDir = path.join(workspacePath, '.tdad');
-        this.nextTaskFile = path.join(this.tdadDir, 'NEXT_TASK.md');
-        this.agentDoneFile = path.join(this.tdadDir, 'AGENT_DONE.md');
+        if (nodeId) {
+            this.taskDir = path.join(this.tdadDir, 'tasks', nodeId);
+            this.nextTaskFile = path.join(this.taskDir, 'NEXT_TASK.md');
+            this.agentDoneFile = path.join(this.taskDir, 'AGENT_DONE.md');
+        } else {
+            this.taskDir = this.tdadDir;
+            this.nextTaskFile = path.join(this.tdadDir, 'NEXT_TASK.md');
+            this.agentDoneFile = path.join(this.tdadDir, 'AGENT_DONE.md');
+        }
     }
 
     /**
      * Ensure .tdad directory exists
      */
     private ensureDirectoryExists(): void {
-        if (!fs.existsSync(this.tdadDir)) {
-            fs.mkdirSync(this.tdadDir, { recursive: true });
-            logger.log('TASK-FILE-MANAGER', `Created .tdad directory: ${this.tdadDir}`);
+        if (!fs.existsSync(this.taskDir)) {
+            fs.mkdirSync(this.taskDir, { recursive: true });
+            logger.log('TASK-FILE-MANAGER', `Created directory: ${this.taskDir}`);
         }
     }
 
@@ -325,7 +335,7 @@ When ready to retry automation, use the "Start Single Node" button on the canvas
     // --- Automation State Persistence ---
 
     private get stateFile(): string {
-        return path.join(this.tdadDir, 'automation-state.json');
+        return path.join(this.taskDir, 'automation-state.json');
     }
 
     /**

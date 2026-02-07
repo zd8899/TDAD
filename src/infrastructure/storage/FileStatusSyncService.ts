@@ -6,21 +6,21 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Node, FileNode, FunctionNode } from '../../shared/types';
+import { Node, FeatureNode } from '../../shared/types';
 import { getFeatureFilePath, getTestFilePath } from '../../shared/utils/nodePathUtils';
 import { getWorkflowFolderName } from '../../shared/utils/stringUtils';
 import { logCanvas } from '../../shared/utils/Logger';
 
 export class FileStatusSyncService {
     private fileWatchers: vscode.FileSystemWatcher[] = [];
-    private updateCallback?: (nodeId: string, updates: Partial<FileNode | FunctionNode>) => void;
+    private updateCallback?: (nodeId: string, updates: Partial<FeatureNode>) => void;
 
     constructor(private workspacePath: string) {}
 
     /**
      * Initialize file system watchers for BDD and test files
      */
-    initialize(updateCallback: (nodeId: string, updates: Partial<FileNode | FunctionNode>) => void): void {
+    initialize(updateCallback: (nodeId: string, updates: Partial<FeatureNode>) => void): void {
         this.updateCallback = updateCallback;
 
         // Watch for BDD spec files (*.feature.md)
@@ -48,9 +48,8 @@ export class FileStatusSyncService {
     /**
      * Sync status fields for a single node
      */
-    async syncNodeStatus(node: FileNode | FunctionNode): Promise<Partial<FileNode | FunctionNode>> {
-        // Only FileNode (feature) has fileName
-        if (node.nodeType !== 'feature' || !('fileName' in node) || !node.fileName) {
+    async syncNodeStatus(node: FeatureNode): Promise<Partial<FeatureNode>> {
+        if (!node.fileName) {
             return {};
         }
 
@@ -58,7 +57,7 @@ export class FileStatusSyncService {
         const bddPath = getFeatureFilePath(workflowFolderName, node.fileName);
         const testPath = getTestFilePath(workflowFolderName, node.fileName);
 
-        const updates: Partial<FileNode | FunctionNode> = {};
+        const updates: Partial<FeatureNode> = {};
 
         // Check BDD file
         const bddFullPath = path.join(this.workspacePath, bddPath);
@@ -90,8 +89,8 @@ export class FileStatusSyncService {
     /**
      * Sync status fields for all nodes in a workflow
      */
-    async syncAllNodes(nodes: (FileNode | FunctionNode)[]): Promise<Map<string, Partial<FileNode | FunctionNode>>> {
-        const updates = new Map<string, Partial<FileNode | FunctionNode>>();
+    async syncAllNodes(nodes: FeatureNode[]): Promise<Map<string, Partial<FeatureNode>>> {
+        const updates = new Map<string, Partial<FeatureNode>>();
 
         for (const node of nodes) {
             const nodeUpdates = await this.syncNodeStatus(node);
@@ -129,7 +128,7 @@ export class FileStatusSyncService {
 
         // Find node by fileName (this requires access to nodes - will be provided by the callback)
         // For now, we'll trigger a re-sync via the callback
-        const updates: Partial<FileNode | FunctionNode> = {
+        const updates: Partial<FeatureNode> = {
             hasBddSpec: changeType !== 'deleted'
         };
 
@@ -153,7 +152,7 @@ export class FileStatusSyncService {
         const fileName = path.basename(uri.fsPath).replace(/\.(spec|test)\.ts$/, '');
         logCanvas(`[FileStatusSync] Test file ${changeType}: ${fileName}`);
 
-        const updates: Partial<FileNode | FunctionNode> = {
+        const updates: Partial<FeatureNode> = {
             hasTestDetails: changeType !== 'deleted'
         };
 

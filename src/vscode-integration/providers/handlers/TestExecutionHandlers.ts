@@ -380,6 +380,13 @@ export class TestExecutionHandlers {
     }
 
     /**
+     * Cancel the currently running test (kills the child process)
+     */
+    cancelCurrentTest(): void {
+        this.testOrchestrator.cancelCurrentTest();
+    }
+
+    /**
      * Assemble and copy golden packet
      */
     async handleCopyGoldenPacket(nodeId: string): Promise<void> {

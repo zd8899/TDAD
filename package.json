@@ -284,8 +284,14 @@
         },
         "tdad.agent.cli.command": {
           "type": "string",
-          "default": "claude \"Read .tdad/NEXT_TASK.md and execute the task. When done, write DONE to .tdad/AGENT_DONE.md\"",
+          "default": "claude \"{prompt}\"",
           "description": "CLI command to trigger the AI agent. Use {file} for task file path, {prompt} for default prompt. Examples: 'claude \"{prompt}\"', 'aider --message \"{prompt}\"'"
+        },
+        "tdad.agent.cli.preset": {
+          "type": "string",
+          "default": "claude",
+          "enum": ["claude", "aider", "codex", "custom"],
+          "description": "Selected CLI agent preset"
         },
         "tdad.agent.cli.permissionFlags": {
           "type": "object",

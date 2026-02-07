@@ -3,12 +3,12 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { logger } from '../shared/utils/Logger';
-import { FeatureGating } from '../shared/utils/FeatureGating';
 
 /**
- * CLIAgentLauncher - Sprint 14: Hands-Free Automation for CLI Agents
+ * CLIAgentLauncher - Hands-Free Automation for CLI Agents
  *
  * Launches any CLI-based AI agent via VS Code terminal.
+ * Supports multiple concurrent terminals for parallel node execution.
  * Supports configurable command templates for different agents:
  * - Claude Code: claude "{prompt}"
  * - Aider: aider --message "{prompt}"
@@ -42,8 +42,8 @@ export interface CLIAgentConfig {
 
 export class CLIAgentLauncher {
     private static instance: CLIAgentLauncher | null = null;
-    private terminal: vscode.Terminal | null = null;
-    private readonly terminalName = 'TDAD Agent';
+    private terminals: Map<string, vscode.Terminal> = new Map();
+    private readonly defaultTerminalId = '__default__';
     private workspacePath: string;
     private slackOutputEnabled: boolean = false;
 
@@ -107,7 +107,7 @@ export class CLIAgentLauncher {
         const savedFlags = config.get<CLIPermissionFlags>('agent.cli.permissionFlags');
         return {
             enabled: config.get('agent.cli.enabled', true),
-            command: config.get('agent.cli.command', 'claude "Read .tdad/NEXT_TASK.md and execute the task. When done, write DONE to .tdad/AGENT_DONE.md"'),
+            command: config.get('agent.cli.command', 'claude "{prompt}"'),
             permissionFlags: savedFlags ? { ...DEFAULT_PERMISSION_FLAGS, ...savedFlags } : DEFAULT_PERMISSION_FLAGS
         };
     }
@@ -120,39 +120,44 @@ export class CLIAgentLauncher {
     }
 
     /**
-     * Create a fresh terminal for each task
-     * Each CLI agent invocation needs its own terminal session
-     * On Windows with Slack output enabled, forces PowerShell for tee compatibility
+     * Create a fresh terminal for a given ID.
+     * Each CLI agent invocation needs its own terminal session.
+     * On Windows with Slack output enabled, forces PowerShell for tee compatibility.
+     * @param terminalId - Unique identifier for this terminal (nodeId or default)
      */
-    private createFreshTerminal(): vscode.Terminal {
-        // Dispose of existing terminal if it exists
-        if (this.terminal) {
+    private createFreshTerminal(terminalId?: string): vscode.Terminal {
+        const id = terminalId || this.defaultTerminalId;
+
+        // Dispose of existing terminal with same ID if it exists
+        const existing = this.terminals.get(id);
+        if (existing) {
             try {
-                this.terminal.dispose();
-                logger.log('CLI-AGENT-LAUNCHER', 'Disposed previous terminal');
+                existing.dispose();
+                logger.log('CLI-AGENT-LAUNCHER', `Disposed previous terminal: ${id}`);
             } catch {
                 // Terminal might already be closed
             }
-            this.terminal = null;
+            this.terminals.delete(id);
         }
 
         const isWindows = os.platform() === 'win32';
+        const terminalName = terminalId ? `TDAD Agent - ${terminalId}` : 'TDAD Agent';
         const terminalOptions: vscode.TerminalOptions = {
-            name: this.terminalName,
+            name: terminalName,
             cwd: this.workspacePath
         };
 
         // On Windows with Slack output capture, use PowerShell
-        // Note: Start-Transcript has limited capture for interactive TUIs
         if (isWindows && this.slackOutputEnabled) {
             terminalOptions.shellPath = 'powershell.exe';
             logger.log('CLI-AGENT-LAUNCHER', 'Using PowerShell for Slack output capture');
         }
 
-        this.terminal = vscode.window.createTerminal(terminalOptions);
-        logger.log('CLI-AGENT-LAUNCHER', `Created new TDAD Agent terminal${isWindows && this.slackOutputEnabled ? ' (PowerShell)' : ''}`);
+        const terminal = vscode.window.createTerminal(terminalOptions);
+        this.terminals.set(id, terminal);
+        logger.log('CLI-AGENT-LAUNCHER', `Created terminal: ${terminalName}`);
 
-        return this.terminal;
+        return terminal;
     }
 
     /**
@@ -161,8 +166,9 @@ export class CLIAgentLauncher {
      * reliably with CLI agents like Claude Code
      * @param taskFile - Path to the task file (relative to workspace)
      * @param taskDescription - Optional description for logging
+     * @param terminalId - Optional terminal ID for parallel execution (e.g., nodeId)
      */
-    public triggerAgent(taskFile = '.tdad/NEXT_TASK.md', taskDescription?: string): void {
+    public triggerAgent(taskFile = '.tdad/NEXT_TASK.md', taskDescription?: string, terminalId?: string): void {
         const config = this.getConfig();
 
         if (!config.enabled) {
@@ -171,7 +177,7 @@ export class CLIAgentLauncher {
         }
 
         // Always create fresh terminal - CLI agents need their own session
-        const terminal = this.createFreshTerminal();
+        const terminal = this.createFreshTerminal(terminalId);
         terminal.show(true); // Show terminal, preserve focus on editor
 
         // Build the command by replacing placeholders and applying permission flags
@@ -185,22 +191,36 @@ export class CLIAgentLauncher {
         // Send command to terminal
         terminal.sendText(command);
 
-        logger.log('CLI-AGENT-LAUNCHER', `Triggered agent: ${taskDescription || taskFile}`);
+        logger.log('CLI-AGENT-LAUNCHER', `Triggered agent (terminal=${terminalId || 'default'}): ${taskDescription || taskFile}`);
         logger.log('CLI-AGENT-LAUNCHER', `Command: ${command}`);
     }
 
     /**
      * Build the command by replacing placeholders and applying permission flags
+     * Derives AGENT_DONE path from taskFile path for per-node isolation.
      * Supported placeholders:
      * - {file} - Path to the task file
      * - {prompt} - Default prompt text
      */
     private buildCommand(commandTemplate: string, taskFile: string, permissionFlags: CLIPermissionFlags): string {
-        const defaultPrompt = `Read ${taskFile} and execute the task. When done, write DONE to .tdad/AGENT_DONE.md. If stuck, write STUCK: [reason] instead.`;
+        // Derive AGENT_DONE path from task file path (supports per-node isolation)
+        // Use both / and \ to handle Windows paths (path.sep produces backslashes)
+        const lastSep = Math.max(taskFile.lastIndexOf('/'), taskFile.lastIndexOf('\\'));
+        const taskDir = lastSep > 0 ? taskFile.substring(0, lastSep) : '';
+        const sep = taskFile.includes('\\') ? '\\' : '/';
+        const agentDoneFile = taskDir ? `${taskDir}${sep}AGENT_DONE.md` : '.tdad/AGENT_DONE.md';
+
+        const defaultPrompt = `Read ${taskFile} and execute the task. When done, write DONE to ${agentDoneFile}. If stuck, write STUCK: [reason] instead.`;
 
         let command = commandTemplate;
         command = command.replace(/\{file\}/g, taskFile);
         command = command.replace(/\{prompt\}/g, defaultPrompt);
+
+        // Replace hardcoded legacy paths for backward compatibility with existing saved settings
+        // This ensures per-node paths work even when the command template has no {prompt}/{file} placeholders
+        // Handle both / and \ path separators (Windows vs Unix)
+        command = command.replace(/\.tdad[/\\]NEXT_TASK\.md/g, taskFile);
+        command = command.replace(/\.tdad[/\\]AGENT_DONE\.md/g, agentDoneFile);
 
         // Apply permission flags based on detected CLI
         command = this.applyPermissionFlags(command, permissionFlags);
@@ -257,8 +277,6 @@ export class CLIAgentLauncher {
         }
 
         // Windows: Run Claude interactively (preserves TUI)
-        // Output capture is done via clipboard snapshot (captureTerminalOutput method)
-        // Write a marker to log file so we know capture method is clipboard-based
         logger.log('CLI-AGENT-LAUNCHER', 'Windows - running interactively, using clipboard capture');
 
         const timestamp = new Date().toISOString();
@@ -296,7 +314,7 @@ export class CLIAgentLauncher {
             {
                 label: '$(terminal) Claude Code',
                 description: 'Anthropic Claude Code CLI',
-                command: 'claude "Read .tdad/NEXT_TASK.md and execute the task. When done, write DONE to .tdad/AGENT_DONE.md"'
+                command: 'claude "{prompt}"'
             },
             {
                 label: '$(terminal) Aider',
@@ -391,10 +409,12 @@ export class CLIAgentLauncher {
     /**
      * Capture terminal output via clipboard (for Windows interactive mode)
      * Uses keyboard shortcuts to select all and copy terminal content
+     * @param terminalId - Optional terminal ID to capture from
      * @returns The terminal content or null if capture failed
      */
-    public async captureTerminalOutput(): Promise<string | null> {
-        const terminal = this.terminal || vscode.window.terminals.find(t => t.name === this.terminalName);
+    public async captureTerminalOutput(terminalId?: string): Promise<string | null> {
+        const id = terminalId || this.defaultTerminalId;
+        const terminal = this.terminals.get(id) || vscode.window.terminals.find(t => t.name === 'TDAD Agent');
         if (!terminal) {
             logger.log('CLI-AGENT-LAUNCHER', 'No terminal found for capture');
             return null;
@@ -437,19 +457,39 @@ export class CLIAgentLauncher {
     /**
      * Kill the running CLI agent by disposing the terminal
      * Disposing is more reliable than Ctrl+C, especially for Claude Code
+     * @param terminalId - Optional: kill specific terminal. If omitted, kills all TDAD terminals.
      * @returns true if terminal was found and disposed
      */
-    public killTerminal(): boolean {
-        // Try our managed terminal first
-        if (this.terminal) {
-            this.terminal.dispose();
-            this.terminal = null;
-            logger.log('CLI-AGENT-LAUNCHER', 'Disposed managed terminal');
+    public killTerminal(terminalId?: string): boolean {
+        if (terminalId) {
+            // Kill specific terminal
+            const terminal = this.terminals.get(terminalId);
+            if (terminal) {
+                terminal.dispose();
+                this.terminals.delete(terminalId);
+                logger.log('CLI-AGENT-LAUNCHER', `Disposed terminal: ${terminalId}`);
+                return true;
+            }
+            return false;
+        }
+
+        // Kill all TDAD terminals
+        if (this.terminals.size > 0) {
+            const count = this.terminals.size;
+            for (const [, terminal] of this.terminals) {
+                try {
+                    terminal.dispose();
+                } catch {
+                    // Terminal might already be closed
+                }
+            }
+            this.terminals.clear();
+            logger.log('CLI-AGENT-LAUNCHER', `Disposed all ${count} TDAD terminals`);
             return true;
         }
 
-        // Fallback: find and dispose any TDAD Agent terminal
-        const terminal = vscode.window.terminals.find(t => t.name === this.terminalName);
+        // Fallback: find and dispose any TDAD Agent terminal by name
+        const terminal = vscode.window.terminals.find(t => t.name.startsWith('TDAD Agent'));
         if (terminal) {
             terminal.dispose();
             logger.log('CLI-AGENT-LAUNCHER', 'Disposed found TDAD Agent terminal');
@@ -461,13 +501,17 @@ export class CLIAgentLauncher {
     }
 
     /**
-     * Dispose of the terminal
+     * Dispose of all terminals and clean up
      */
     public dispose(): void {
-        if (this.terminal) {
-            this.terminal.dispose();
-            this.terminal = null;
+        for (const [, terminal] of this.terminals) {
+            try {
+                terminal.dispose();
+            } catch {
+                // Terminal might already be closed
+            }
         }
+        this.terminals.clear();
         CLIAgentLauncher.instance = null;
         logger.log('CLI-AGENT-LAUNCHER', 'Disposed');
     }

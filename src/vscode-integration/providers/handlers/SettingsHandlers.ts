@@ -175,7 +175,7 @@ export class SettingsHandlers {
 
             // Map preset to command
             const presetCommands: Record<string, string> = {
-                'claude': 'claude "Read .tdad/NEXT_TASK.md and execute the task. When done, write DONE to .tdad/AGENT_DONE.md"',
+                'claude': 'claude "{prompt}"',
                 'aider': 'aider --message "{prompt}"',
                 'codex': 'codex "{prompt}"'
             };

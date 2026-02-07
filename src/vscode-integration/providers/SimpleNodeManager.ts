@@ -577,7 +577,7 @@ export class SimpleNodeManager {
             return { valid: false, error: 'Source or target node not found' };
         }
 
-        // Only FileNode and FunctionNode support inputs/outputs
+        // Only FeatureNode supports inputs/outputs
         if (
             (sourceNode.nodeType !== 'feature') ||
             (targetNode.nodeType !== 'feature')
@@ -650,7 +650,7 @@ export class SimpleNodeManager {
         outputName: string
     ): void {
         const node = this._nodes.find(n => n.id === nodeId);
-        if (!node || (node.nodeType !== 'feature' && node.nodeType !== 'function')) {
+        if (!node || node.nodeType !== 'feature') {
             return;
         }
 
@@ -675,7 +675,7 @@ export class SimpleNodeManager {
      */
     public clearInputSource(nodeId: string, inputId: string): void {
         const node = this._nodes.find(n => n.id === nodeId);
-        if (!node || (node.nodeType !== 'feature' && node.nodeType !== 'function')) {
+        if (!node || node.nodeType !== 'feature') {
             return;
         }
 

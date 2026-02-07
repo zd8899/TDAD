@@ -91,7 +91,7 @@ export class WorkflowController {
         const savedFlags = config.get<any>('agent.cli.permissionFlags');
         const cliSettings: CLISettings = {
             enabled: config.get<boolean>('agent.cli.enabled', true),
-            command: config.get<string>('agent.cli.command', 'claude "Read .tdad/NEXT_TASK.md and execute the task. When done, write DONE to .tdad/AGENT_DONE.md"'),
+            command: config.get<string>('agent.cli.command', 'claude "{prompt}"'),
             preset: config.get<string>('agent.cli.preset', 'claude'),
             permissionFlags: savedFlags ? { ...defaultPermissionFlags, ...savedFlags } : defaultPermissionFlags
         };

@@ -450,6 +450,39 @@ export function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(agentDoneWatcher);
 
+    // Per-node Agent Done watcher for parallel execution
+    const perNodeAgentDoneWatcher = vscode.workspace.createFileSystemWatcher('**/.tdad/tasks/*/AGENT_DONE.md');
+
+    perNodeAgentDoneWatcher.onDidCreate(async (uri) => {
+        const nodeId = extractNodeIdFromAgentDonePath(uri.fsPath);
+        if (nodeId) {
+            logExtension(`Per-node agent done signal (created): ${nodeId}`);
+            await handlePerNodeAgentDone(nodeId);
+        }
+    });
+
+    perNodeAgentDoneWatcher.onDidChange(async (uri) => {
+        const nodeId = extractNodeIdFromAgentDonePath(uri.fsPath);
+        if (nodeId) {
+            logExtension(`Per-node agent done signal (changed): ${nodeId}`);
+            await handlePerNodeAgentDone(nodeId);
+        }
+    });
+
+    function extractNodeIdFromAgentDonePath(filePath: string): string | null {
+        const normalized = filePath.replace(/\\/g, '/');
+        const match = normalized.match(/\.tdad\/tasks\/([^/]+)\/AGENT_DONE\.md$/);
+        return match ? match[1] : null;
+    }
+
+    async function handlePerNodeAgentDone(nodeId: string) {
+        if (SimplifiedWorkflowCanvasProvider.currentPanel) {
+            await SimplifiedWorkflowCanvasProvider.currentPanel.handlePerNodeAgentDone(nodeId);
+        }
+    }
+
+    context.subscriptions.push(perNodeAgentDoneWatcher);
+
     // Sprint 13: Register Agent Orchestrator commands
     const startAutomationCommand = vscode.commands.registerCommand('tdad.startAutomation', async () => {
         logExtension('startAutomation command executed');

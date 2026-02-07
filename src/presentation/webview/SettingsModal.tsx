@@ -64,7 +64,7 @@ interface SettingsModalProps {
 type SettingsTab = 'project' | 'testing' | 'autopilot' | 'prompts' | 'slack';
 
 const CLI_PRESETS = [
-    { id: 'claude', label: 'Claude Code', baseCommand: 'claude', command: 'claude "Read .tdad/NEXT_TASK.md and execute the task. When done, write DONE to .tdad/AGENT_DONE.md"' },
+    { id: 'claude', label: 'Claude Code', baseCommand: 'claude', command: 'claude "{prompt}"' },
     { id: 'aider', label: 'Aider', baseCommand: 'aider', command: 'aider --message "{prompt}"' },
     { id: 'codex', label: 'Codex CLI (OpenAI)', baseCommand: 'codex', command: 'codex "{prompt}"' },
     { id: 'cursor', label: 'Cursor', baseCommand: 'cursor', command: 'cursor --ask "{prompt}"' },
@@ -143,7 +143,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     
     // CLI settings state
     const [cliEnabled, setCLIEnabled] = useState(true);
-    const [cliCommand, setCLICommand] = useState('claude "Read .tdad/NEXT_TASK.md and execute the task. When done, write DONE to .tdad/AGENT_DONE.md"');
+    const [cliCommand, setCLICommand] = useState('claude "{prompt}"');
     const [selectedPreset, setSelectedPreset] = useState('claude');
     const [permissionFlags, setPermissionFlags] = useState<CLIPermissionFlags>(DEFAULT_PERMISSION_FLAGS);
 

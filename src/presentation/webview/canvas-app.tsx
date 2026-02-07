@@ -422,7 +422,7 @@ const CanvasApp: React.FC = () => {
     if (isIOConnection && connection.sourceHandle && connection.targetHandle) {
       // Find the target node and update its input configuration
       const targetNode = allNodes.find(n => n.id === connection.target);
-      if (targetNode && (targetNode.nodeType === 'feature' || targetNode.nodeType === 'function')) {
+      if (targetNode && targetNode.nodeType === 'feature') {
         const nodeWithIO = targetNode as any;
         const targetInput = nodeWithIO.inputs?.find((inp: any) => inp.id === connection.targetHandle);
 
@@ -638,7 +638,7 @@ const CanvasApp: React.FC = () => {
   }, [postMessage]);
 
   // Autopilot dialog handlers
-  const handleAutopilotConfirm = useCallback((modes: AutopilotModes, maxRetries: number, cliSettings?: { preset: string; skipPermissions: boolean }) => {
+  const handleAutopilotConfirm = useCallback((modes: AutopilotModes, maxRetries: number, cliSettings?: { preset: string; skipPermissions: boolean }, concurrency?: number, waitForDependencies?: boolean) => {
     setAutopilotDialogOpen(false);
 
     if (autopilotIsSingleNode && selectedNode) {
@@ -658,7 +658,9 @@ const CanvasApp: React.FC = () => {
         allFolders: autopilotIsAllFolders,
         modes,
         maxRetries,
-        cliSettings
+        cliSettings,
+        concurrency: concurrency || 1,
+        waitForDependencies: waitForDependencies || false
       });
     }
   }, [postMessage, autopilotIsSingleNode, autopilotIsAllFolders, selectedNode]);
