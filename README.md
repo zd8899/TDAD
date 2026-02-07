@@ -8,7 +8,7 @@
 
 It enforces a **Plan → Spec → Test → Fix** cycle where **runtime feedback** (not just text) guides your AI to deliver working software, not just snippets.
 
-**Key Features:** Local-first, Zero API calls, Use your own AI (Claude, ChatGPT, Cursor, etc.), Build remotely with Slack, and Free.
+**Key Features:** Local-first, Zero API calls, Use your own AI (Claude, ChatGPT, Cursor, etc.), Parallel Auto-Pilot, Build remotely with Slack, and Free.
 
 <p align="center">
   <img src="media/workflow-fix.gif" alt="TDAD Demo - Test → Fix → Green" width="700">
@@ -291,6 +291,12 @@ Auto-Pilot (aka "Lazy Mode") automates the repetitive loop of BDD → Test → F
 2. It triggers your configured CLI agent (Claude Code, Aider, etc.)
 3. The agent implements the code and writes "DONE"
 4. TDAD runs the tests and loops until passing
+
+**Key capabilities:**
+
+- **CLI Agent Presets** - Pre-configured settings for Claude Code, Cursor, Gemini CLI, and OpenCode. Select your agent from a dropdown and TDAD handles the right command flags and permissions automatically.
+- **Parallel Node Execution** - Run multiple nodes concurrently with sliding-window concurrency. Each node gets an isolated task file (`.tdad/tasks/{nodeId}/`) and its own terminal, so agents don't interfere with each other. Configure the number of concurrent agents from the Autopilot dialog.
+- **Live Automation State** - Automation progress is written to `.tdad/automation-state.json` so you can monitor queue order, per-node status, and retry counts in real time. You can edit the file mid-run to reorder or skip nodes.
 
 **Note:** Auto-Pilot works with your own CLI agents (Claude Code, Aider, etc.). TDAD doesn't accept or store any API keys - you use your preferred agent with your own credentials and security policies.
 

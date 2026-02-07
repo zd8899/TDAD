@@ -259,8 +259,9 @@ export class NodeAutomationHandlers {
                 onComplete: (completedNodeId: string, passed: boolean) => {
                     logCanvas(`Single-node automation complete [${nodeId}]: ${passed ? 'PASSED' : 'FAILED'} (modes: ${modes.join(', ')})`);
                     this.checkSingleNodeFileStatus(completedNodeId);
-                    // Clean up completed orchestrator
+                    // Clean up completed orchestrator and terminal
                     this.orchestrators.delete(nodeId);
+                    CLIAgentLauncher.getInstance(workspaceRoot).killTerminal(nodeId);
 
                     const completedNode = this.nodeManager.getNodeById(completedNodeId);
                     if (completedNode) {
@@ -829,6 +830,9 @@ export class NodeAutomationHandlers {
                     logCanvas(`[All-Nodes] ${node.title} complete: ${passed ? 'PASSED' : 'FAILED'} (modes: ${modes.join(', ')})`);
                     this.checkSingleNodeFileStatus(completedNodeId);
                     this.orchestrators.delete(effectiveNodeId);
+
+                    // Close the terminal for this completed node
+                    CLIAgentLauncher.getInstance(workspaceRoot).killTerminal(effectiveNodeId);
 
                     const completedNode = this.nodeManager.getNodeById(completedNodeId);
                     if (completedNode) {
