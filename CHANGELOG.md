@@ -5,18 +5,6 @@ All notable changes to the TDAD extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.0.20] - 2026-02-07
-
-### Added
-- **Parallel node execution**: Autopilot now supports concurrent node processing with sliding-window concurrency and dependency-aware scheduling
-- Per-node isolated task files and terminals for independent parallel execution
-- Concurrency and dependency-wait UI controls in Autopilot confirm dialog
-
-### Changed
-- Renamed `FileNode` to `FeatureNode` and removed unused `FunctionNode` type for cleaner type system
-- CLI agent command defaults updated to `claude "{prompt}"` placeholder
-- Replaced single orchestrator/terminal with Map-based instances for multi-node support
-
 ## [0.0.19] - 2026-02-07
 
 ### Fixed
