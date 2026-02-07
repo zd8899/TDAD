@@ -127,16 +127,6 @@ export class AutomationStateManager {
     }
 
     /**
-     * Delete automation state file
-     */
-    deleteState(): void {
-        if (fs.existsSync(this.stateFilePath)) {
-            fs.unlinkSync(this.stateFilePath);
-            logCanvas(`Automation state deleted: ${this.stateFilePath}`);
-        }
-    }
-
-    /**
      * Update node status
      */
     updateNodeStatus(
@@ -255,6 +245,16 @@ export class AutomationStateManager {
      */
     getStateFilePath(): string {
         return this.stateFilePath;
+    }
+
+    /**
+     * Delete automation state file (used for cleanup after single-node execution)
+     */
+    deleteState(): void {
+        if (fs.existsSync(this.stateFilePath)) {
+            fs.unlinkSync(this.stateFilePath);
+            logCanvas(`Automation state file deleted: ${this.stateFilePath}`);
+        }
     }
 
     /**
