@@ -5,6 +5,14 @@ All notable changes to the TDAD extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.23] - 2026-02-07
+
+### Added
+- **Sequential test execution**: New checkbox in Autopilot dialog (when concurrency > 1) to queue test runs so only one Playwright process runs at a time, preventing resource conflicts
+
+### Fixed
+- **Concurrency state persistence**: `concurrency` value now correctly saved to automation-state.json (previously hardcoded to 1) and read by runtime for mid-run edits
+
 ## [0.0.22] - 2026-02-07
 
 ### Changed
