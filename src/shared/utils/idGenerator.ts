@@ -40,9 +40,9 @@ export function scanExistingTestIds(workspacePath: string): { ui: number; api: n
         return result;
     }
 
-    // Patterns to match: [UI-001], [API-001]
-    const uiPattern = /\[UI-(\d{3})\]/g;
-    const apiPattern = /\[API-(\d{3})\]/g;
+    // Patterns to match: [UI-001], [API-001], [UI-1000], etc. (any number of digits)
+    const uiPattern = /\[UI-(\d+)\]/g;
+    const apiPattern = /\[API-(\d+)\]/g;
 
     const scanDir = (dir: string) => {
         const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -129,8 +129,8 @@ export function assignTestIdsToFile(filePath: string, workspacePath: string): bo
     // Captures: full match, quote char, test name
     const testPattern = /test\s*\(\s*(['"`])([^'"`]+)\1/g;
 
-    // Pattern to check if test already has numbered ID (e.g., [UI-001], [API-002])
-    const hasNumberedIdPattern = /^\[(UI|API)-\d{3}\]/;
+    // Pattern to check if test already has numbered ID (e.g., [UI-001], [API-002], [UI-1000], etc.)
+    const hasNumberedIdPattern = /^\[(UI|API)-\d+\]/;
 
     // Pattern to check if test has prefix without number (e.g., [API], [UI])
     // AI generates these, we transform them to [API-XXX], [UI-XXX]
