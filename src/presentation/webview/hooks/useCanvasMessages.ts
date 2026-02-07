@@ -326,6 +326,9 @@ function handleAutopilotInfo(message: any, state: CanvasMessageState, deps: Canv
     } else {
         state.setAutopilotPendingCount(message.pendingCount);
         state.setAutopilotFolderName(message.folderName || 'this folder');
+        if (message.cliSettings) {
+            state.setSettingsData((prev: any) => ({ ...(prev || {}), cliSettings: message.cliSettings }));
+        }
         state.setAutopilotDialogOpen(true);
     }
 }

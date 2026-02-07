@@ -180,6 +180,9 @@ export class SettingsHandlers {
                 'codex': 'codex "{prompt}"'
             };
 
+            // Save preset selection
+            await config.update('agent.cli.preset', preset, vscode.ConfigurationTarget.Workspace);
+
             // Only update command if not custom
             if (preset !== 'custom' && presetCommands[preset]) {
                 await config.update('agent.cli.command', presetCommands[preset], vscode.ConfigurationTarget.Workspace);

@@ -430,10 +430,29 @@ export class NodeAutomationHandlers {
                 return;
             }
 
+            // Read CLI settings from config for the dialog
+            const config = vscode.workspace.getConfiguration('tdad');
+            const defaultPermissionFlags = {
+                claude: { dangerouslySkipPermissions: false },
+                aider: { yesAlways: false, autoCommit: false },
+                codex: { autoApprove: false },
+                cursor: { autoApprove: false },
+                gemini: { autoConfirm: false },
+                opencode: { autoApprove: false }
+            };
+            const savedFlags = config.get<any>('agent.cli.permissionFlags');
+            const cliSettings = {
+                enabled: config.get<boolean>('agent.cli.enabled', true),
+                command: config.get<string>('agent.cli.command', 'claude "{prompt}"'),
+                preset: config.get<string>('agent.cli.preset', 'claude'),
+                permissionFlags: savedFlags ? { ...defaultPermissionFlags, ...savedFlags } : defaultPermissionFlags
+            };
+
             this.webview.postMessage({
                 command: 'autopilotInfo',
                 pendingCount: featureNodes.length,
-                folderName
+                folderName,
+                cliSettings
             });
         } catch (error) {
             logError('CANVAS', 'Failed to get autopilot info', error);
@@ -682,15 +701,10 @@ export class NodeAutomationHandlers {
                 }
                 completedNodes.add(result.nodeId);
 
-                // Try to launch more
+                // Try to launch more - when waiting for dependencies, rescan from start
+                // since completed nodes may have unblocked previously-skipped nodes
+                if (waitForDependencies) { queueIndex = 0; }
                 if (!launchNext()) { automationStopped = true; }
-
-                // If waitForDependencies and queue has items left but nothing was launched,
-                // retry from beginning of remaining queue
-                if (waitForDependencies && runningNodes.size === 0 && queueIndex < sortedNodes.length) {
-                    queueIndex = 0;
-                    if (!launchNext()) { automationStopped = true; }
-                }
             }
 
             // Check if all nodes are processed (not stopped)
