@@ -5,6 +5,11 @@ All notable changes to the TDAD extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.17] - 2026-02-07
+
+### Fixed
+- **Critical**: Test ID auto-assignment now supports 4+ digit IDs (1000+). Previously, ID patterns only matched exactly 3 digits (`\d{3}`), causing auto-assignment to fail when test IDs exceeded 999, resulting in duplicate IDs and broken test tracking. Updated all ID patterns to `\d+` to match any number of digits, ensuring the system scales properly for large test suites.
+
 ## [0.0.16] - 2026-02-06
 
 ### Added
