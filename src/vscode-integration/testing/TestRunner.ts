@@ -30,6 +30,10 @@ export class TestRunner implements ITestRunner {
     private currentProcess: ChildProcess | null = null;
     private defaultTimeout = 60000; // 60 seconds
 
+    /** When true, only one test process runs at a time (queue via promise chain) */
+    static sequentialMode = false;
+    private static testQueue: Promise<void> = Promise.resolve();
+
     constructor() {
         this.outputChannel = vscode.window.createOutputChannel('TDAD Tests');
         // Get timeout from configuration
@@ -38,6 +42,25 @@ export class TestRunner implements ITestRunner {
     }
 
     async runNodeTests(node: Node, generatedCode: string, options?: TestRunOptions): Promise<TestResult[]> {
+        if (TestRunner.sequentialMode) {
+            return this.runNodeTestsQueued(node, generatedCode, options);
+        }
+        return this.runNodeTestsInternal(node, generatedCode, options);
+    }
+
+    private runNodeTestsQueued(node: Node, generatedCode: string, options?: TestRunOptions): Promise<TestResult[]> {
+        let resolve: (results: TestResult[]) => void;
+        const resultPromise = new Promise<TestResult[]>(r => { resolve = r; });
+
+        TestRunner.testQueue = TestRunner.testQueue.then(async () => {
+            const results = await this.runNodeTestsInternal(node, generatedCode, options);
+            resolve!(results);
+        });
+
+        return resultPromise;
+    }
+
+    private async runNodeTestsInternal(node: Node, generatedCode: string, options?: TestRunOptions): Promise<TestResult[]> {
         const startTime = Date.now();
         const opts: TestRunOptions = {
             timeout: options?.timeout || this.defaultTimeout,

@@ -664,7 +664,8 @@ export class SimplifiedWorkflowCanvasProvider {
                                 message.allFolders === true ? null : undefined,
                                 message.modes || ['bdd', 'test', 'run-fix'],
                                 message.concurrency || 1,
-                                message.waitForDependencies || false
+                                message.waitForDependencies || false,
+                                message.sequentialTests ?? true
                             );
                             break;
                         }

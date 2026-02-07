@@ -19,7 +19,7 @@ interface AutopilotConfirmDialogProps {
   isSingleNode?: boolean;
   nodeName?: string;
   cliSettings?: CLISettings;
-  onConfirm: (modes: AutopilotModes, maxRetries: number, cliSettings?: { preset: string; skipPermissions: boolean }, concurrency?: number, waitForDependencies?: boolean) => void;
+  onConfirm: (modes: AutopilotModes, maxRetries: number, cliSettings?: { preset: string; skipPermissions: boolean }, concurrency?: number, waitForDependencies?: boolean, sequentialTests?: boolean) => void;
   onCancel: () => void;
   onOpenSettings?: () => void;
 }
@@ -59,6 +59,7 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
   // Parallel execution state (only for multi-node)
   const [concurrency, setConcurrency] = useState<number>(1);
   const [waitForDependencies, setWaitForDependencies] = useState<boolean>(false);
+  const [sequentialTests, setSequentialTests] = useState<boolean>(true);
 
   // CLI selection state
   const [selectedCli, setSelectedCli] = useState<string>('claude');
@@ -108,7 +109,7 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
     if (selectedModes.has('bdd')) {orderedModes.push('bdd');}
     if (selectedModes.has('test')) {orderedModes.push('test');}
     if (selectedModes.has('run-fix')) {orderedModes.push('run-fix');}
-    onConfirm(orderedModes, maxRetries, { preset: selectedCli, skipPermissions }, isSingleNode ? 1 : concurrency, waitForDependencies);
+    onConfirm(orderedModes, maxRetries, { preset: selectedCli, skipPermissions }, isSingleNode ? 1 : concurrency, waitForDependencies, concurrency > 1 ? sequentialTests : false);
   };
 
   const getMessage = () => {
@@ -198,14 +199,24 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
               />
             </label>
             {concurrency > 1 && (
-              <label className="autopilot-skip-permissions-label" style={{ marginTop: '6px' }}>
-                <input
-                  type="checkbox"
-                  checked={waitForDependencies}
-                  onChange={(e) => setWaitForDependencies(e.target.checked)}
-                />
-                <span>Wait for dependencies</span>
-              </label>
+              <>
+                <label className="autopilot-skip-permissions-label" style={{ marginTop: '6px' }}>
+                  <input
+                    type="checkbox"
+                    checked={waitForDependencies}
+                    onChange={(e) => setWaitForDependencies(e.target.checked)}
+                  />
+                  <span>Wait for dependencies</span>
+                </label>
+                <label className="autopilot-skip-permissions-label" style={{ marginTop: '6px' }}>
+                  <input
+                    type="checkbox"
+                    checked={sequentialTests}
+                    onChange={(e) => setSequentialTests(e.target.checked)}
+                  />
+                  <span>Sequential test execution</span>
+                </label>
+              </>
             )}
           </div>
         )}

@@ -40,8 +40,10 @@ export interface RetryConfig {
 
 /** Execution settings */
 export interface ExecutionSettings {
-    /** Max concurrent nodes (1 = sequential, >1 = parallel - future feature) */
+    /** Max concurrent nodes (1 = sequential, >1 = parallel) */
     concurrency: number;
+    /** When true, only one test process runs at a time even with concurrent nodes */
+    sequentialTests?: boolean;
 }
 
 export interface AutomationState {

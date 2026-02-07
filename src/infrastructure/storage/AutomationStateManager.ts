@@ -23,7 +23,9 @@ export class AutomationStateManager {
         nodes: Node[],
         workflowId: string,
         folderId: string | null,
-        modes: ('bdd' | 'test' | 'run-fix')[]
+        modes: ('bdd' | 'test' | 'run-fix')[],
+        concurrency = 1,
+        sequentialTests = true
     ): AutomationState {
         const now = new Date().toISOString();
 
@@ -55,9 +57,10 @@ export class AutomationStateManager {
                 retryDelayMs: 2000   // Wait time (milliseconds) between retries
             },
 
-            _EXECUTION: 'Future: Set concurrency > 1 to run multiple nodes in parallel',
+            _EXECUTION: 'Set concurrency > 1 to run multiple nodes in parallel',
             executionSettings: {
-                concurrency: 1  // 1 = sequential (one at a time)
+                concurrency,  // 1 = sequential, >1 = parallel
+                sequentialTests  // true = only one test process at a time
             },
 
             _NODES_HELP: 'Reorder this array to change execution order. Edit each node status/modes as needed.',

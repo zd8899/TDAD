@@ -15,6 +15,7 @@ import { SingleNodeOrchestrator, SingleNodeState } from '../../../core/services/
 import { TestExecutionHandlers } from './TestExecutionHandlers';
 import { CLIAgentLauncher } from '../../CLIAgentLauncher';
 import { AutomationStateManager } from '../../../infrastructure/storage/AutomationStateManager';
+import { TestRunner } from '../../testing/TestRunner';
 
 export class NodeAutomationHandlers {
     private orchestrators: Map<string, SingleNodeOrchestrator> = new Map();
@@ -463,8 +464,9 @@ export class NodeAutomationHandlers {
      * @param modes The automation modes to run
      * @param concurrency Number of concurrent agents (1 = sequential)
      * @param waitForDependencies Whether to wait for dependencies before starting a node
+     * @param sequentialTests Whether to run test processes one at a time
      */
-    async handleRunAllNodesAutomation(confirmed = false, targetFolderId: string | null | undefined = undefined, modes: ('bdd' | 'test' | 'run-fix')[] = ['bdd', 'test', 'run-fix'], concurrency = 1, waitForDependencies = false): Promise<void> {
+    async handleRunAllNodesAutomation(confirmed = false, targetFolderId: string | null | undefined = undefined, modes: ('bdd' | 'test' | 'run-fix')[] = ['bdd', 'test', 'run-fix'], concurrency = 1, waitForDependencies = false, sequentialTests = true): Promise<void> {
         try {
             logCanvas(`Starting run-all-nodes automation (modes: ${modes.join(', ')}, concurrency: ${concurrency}, waitDeps: ${waitForDependencies}, targetFolderId: ${targetFolderId ?? 'none'})`);
 
@@ -530,7 +532,9 @@ export class NodeAutomationHandlers {
                 sortedNodes,
                 sortedNodes[0]?.workflowId || 'unknown',
                 folderId,
-                modes
+                modes,
+                concurrency,
+                sequentialTests
             );
 
             // Auto-skip nodes based on skipStatuses from state file
@@ -600,7 +604,9 @@ export class NodeAutomationHandlers {
                 const currentState = stateManager.loadState();
                 if (!currentState || currentState.status === 'stopped') { return false; }
 
-                while (runningNodes.size < concurrency && queueIndex < sortedNodes.length) {
+                const effectiveConcurrency = currentState.executionSettings?.concurrency || concurrency;
+                TestRunner.sequentialMode = currentState.executionSettings?.sequentialTests ?? sequentialTests;
+                while (runningNodes.size < effectiveConcurrency && queueIndex < sortedNodes.length) {
                     const stateNode = currentState.nodes.find(n => n.id === sortedNodes[queueIndex].id);
                     const sortedNode = sortedNodes[queueIndex];
 
@@ -707,6 +713,9 @@ export class NodeAutomationHandlers {
                     stateManager.completeAutomation(currentState);
                 }
             }
+
+            // Reset sequential test mode when automation ends
+            TestRunner.sequentialMode = false;
 
             // Final state
             const finalState = stateManager.loadState();

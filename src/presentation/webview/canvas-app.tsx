@@ -638,7 +638,7 @@ const CanvasApp: React.FC = () => {
   }, [postMessage]);
 
   // Autopilot dialog handlers
-  const handleAutopilotConfirm = useCallback((modes: AutopilotModes, maxRetries: number, cliSettings?: { preset: string; skipPermissions: boolean }, concurrency?: number, waitForDependencies?: boolean) => {
+  const handleAutopilotConfirm = useCallback((modes: AutopilotModes, maxRetries: number, cliSettings?: { preset: string; skipPermissions: boolean }, concurrency?: number, waitForDependencies?: boolean, sequentialTests?: boolean) => {
     setAutopilotDialogOpen(false);
 
     if (autopilotIsSingleNode && selectedNode) {
@@ -660,7 +660,8 @@ const CanvasApp: React.FC = () => {
         maxRetries,
         cliSettings,
         concurrency: concurrency || 1,
-        waitForDependencies: waitForDependencies || false
+        waitForDependencies: waitForDependencies || false,
+        sequentialTests: sequentialTests ?? true
       });
     }
   }, [postMessage, autopilotIsSingleNode, autopilotIsAllFolders, selectedNode]);
