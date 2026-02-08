@@ -5,6 +5,14 @@ All notable changes to the TDAD extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.24] - 2026-02-07
+
+### Added
+- **Cross-process file locking**: Test execution now uses file-based locks to prevent multiple Playwright processes from running simultaneously, avoiding resource conflicts and race conditions
+
+### Changed
+- **CLI permission flag clarity**: Renamed Codex permission flag from `fullAuto` to `dangerouslyBypassApprovalsAndSandbox` for better clarity about the security implications
+
 ## [0.0.23] - 2026-02-07
 
 ### Added
