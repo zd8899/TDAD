@@ -13,6 +13,7 @@ import { ITestRunner, TestRunOptions } from '../../core/testing/ITestRunner';
 import { FileNameGenerator } from '../../shared/utils/fileNameGenerator';
 import { ScaffoldingService } from '../../core/workflows/ScaffoldingService';
 import { assignTestIdsToFile } from '../../shared/utils/idGenerator';
+import { FileLock } from '../../shared/utils/FileLock';
 import stripAnsi from 'strip-ansi';
 
 export interface TestExecutionResult {
@@ -33,6 +34,9 @@ export class TestRunner implements ITestRunner {
     /** When true, only one test process runs at a time (queue via promise chain) */
     static sequentialMode = false;
     private static testQueue: Promise<void> = Promise.resolve();
+
+    /** Cross-process file lock for test execution (ensures only one Playwright process runs at a time) */
+    private static testLock: FileLock | null = null;
 
     constructor() {
         this.outputChannel = vscode.window.createOutputChannel('TDAD Tests');
@@ -60,6 +64,17 @@ export class TestRunner implements ITestRunner {
         return resultPromise;
     }
 
+    /**
+     * Get or create cross-process file lock for test execution
+     */
+    private static getTestLock(workspacePath: string): FileLock {
+        if (!TestRunner.testLock) {
+            const lockFilePath = path.join(workspacePath, '.tdad', '.test-lock');
+            TestRunner.testLock = new FileLock(lockFilePath);
+        }
+        return TestRunner.testLock;
+    }
+
     private async runNodeTestsInternal(node: Node, generatedCode: string, options?: TestRunOptions): Promise<TestResult[]> {
         const startTime = Date.now();
         const opts: TestRunOptions = {
@@ -73,80 +88,101 @@ export class TestRunner implements ITestRunner {
             this.outputChannel.show();
         }
 
-        this.outputChannel.appendLine(`${'='.repeat(60)}`);
-        this.outputChannel.appendLine(`Running tests for node: ${node.title}`);
-        this.outputChannel.appendLine(`Timeout: ${opts.timeout}ms | Framework: Playwright`);
-        this.outputChannel.appendLine(`${'='.repeat(60)}\n`);
-
-        // Look for automated test file (should exist if code was generated properly)
-        const automatedTestFilePath = await this.findAutomatedTestFile(node);
-
-        let results: TestResult[];
-
-        if (automatedTestFilePath) {
-            this.outputChannel.appendLine(`📁 Test file: ${automatedTestFilePath}\n`);
-
-            try {
-                const executionResult = await this.runTests(automatedTestFilePath, node, opts);
-                results = executionResult.results;
-
-                // Log detailed execution info
-                this.outputChannel.appendLine(`\n${'─'.repeat(60)}`);
-                this.outputChannel.appendLine(`⏱️  Duration: ${executionResult.duration}ms`);
-                this.outputChannel.appendLine(`🔢 Exit code: ${executionResult.exitCode}`);
-
-                if (executionResult.timedOut) {
-                    this.outputChannel.appendLine(`⚠️  WARNING: Tests timed out after ${opts.timeout}ms`);
-                    vscode.window.showWarningMessage(`Tests timed out for "${node.title}" after ${opts.timeout}ms`);
-                }
-
-                if (executionResult.stderr) {
-                    this.outputChannel.appendLine(`\n❌ STDERR:\n${executionResult.stderr}`);
-                }
-
-            } catch (error) {
-                this.outputChannel.appendLine(`\n❌ Test execution error: ${error instanceof Error ? error.message : String(error)}`);
-                logError('TEST-RUNNER', 'Test execution failed', error);
-
-                // Return failed results for all tests
-                results = [];
-                for (const feature of getNodeFeatures(node)) {
-                    for (const test of (feature as any).tests || []) {
-                        results.push({
-                            test,
-                            passed: false,
-                            error: `Test execution failed: ${error instanceof Error ? error.message : String(error)}`
-                        });
-                    }
-                }
-            }
-        } else {
-            this.outputChannel.appendLine(`❌ No automated test file found. Generate code first to create automated tests.`);
-            results = [];
-            vscode.window.showWarningMessage('No automated tests found. Please generate code first to create automated test files.');
+        // Acquire cross-process lock to ensure only one test runs at a time
+        // This prevents conflicts when multiple Claude Code processes run tests concurrently
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        if (!workspaceFolder) {
+            throw new Error('No workspace folder found');
         }
 
-        // Display summary
-        const passedCount = results.filter(r => r.passed).length;
-        const totalCount = results.length;
-        const passRate = totalCount > 0 ? (passedCount / totalCount * 100).toFixed(1) : '0';
-        const duration = Date.now() - startTime;
+        const lock = TestRunner.getTestLock(workspaceFolder.uri.fsPath);
+        const lockAcquired = await lock.acquire(1200000); // 20 minute timeout
 
-        this.outputChannel.appendLine(`\n${'='.repeat(60)}`);
-        this.outputChannel.appendLine(`📊 SUMMARY:`);
-        this.outputChannel.appendLine(`   ${passedCount}/${totalCount} tests passed (${passRate}%)`);
-        this.outputChannel.appendLine(`   Total duration: ${duration}ms`);
-        this.outputChannel.appendLine(`${'='.repeat(60)}`);
+        if (!lockAcquired) {
+            const error = 'Failed to acquire test lock (another test process is running)';
+            this.outputChannel.appendLine(`❌ ${error}`);
+            throw new Error(error);
+        }
 
-        logTestRunner('Test execution completed', {
-            nodeId: node.id,
-            nodeTitle: node.title,
-            passed: passedCount,
-            total: totalCount,
-            duration
-        });
+        try {
+            this.outputChannel.appendLine(`${'='.repeat(60)}`);
+            this.outputChannel.appendLine(`Running tests for node: ${node.title}`);
+            this.outputChannel.appendLine(`Timeout: ${opts.timeout}ms | Framework: Playwright`);
+            this.outputChannel.appendLine(`${'='.repeat(60)}\n`);
 
-        return results;
+            // Look for automated test file (should exist if code was generated properly)
+            const automatedTestFilePath = await this.findAutomatedTestFile(node);
+
+            let results: TestResult[];
+
+            if (automatedTestFilePath) {
+                this.outputChannel.appendLine(`📁 Test file: ${automatedTestFilePath}\n`);
+
+                try {
+                    const executionResult = await this.runTests(automatedTestFilePath, node, opts);
+                    results = executionResult.results;
+
+                    // Log detailed execution info
+                    this.outputChannel.appendLine(`\n${'─'.repeat(60)}`);
+                    this.outputChannel.appendLine(`⏱️  Duration: ${executionResult.duration}ms`);
+                    this.outputChannel.appendLine(`🔢 Exit code: ${executionResult.exitCode}`);
+
+                    if (executionResult.timedOut) {
+                        this.outputChannel.appendLine(`⚠️  WARNING: Tests timed out after ${opts.timeout}ms`);
+                        vscode.window.showWarningMessage(`Tests timed out for "${node.title}" after ${opts.timeout}ms`);
+                    }
+
+                    if (executionResult.stderr) {
+                        this.outputChannel.appendLine(`\n❌ STDERR:\n${executionResult.stderr}`);
+                    }
+
+                } catch (error) {
+                    this.outputChannel.appendLine(`\n❌ Test execution error: ${error instanceof Error ? error.message : String(error)}`);
+                    logError('TEST-RUNNER', 'Test execution failed', error);
+
+                    // Return failed results for all tests
+                    results = [];
+                    for (const feature of getNodeFeatures(node)) {
+                        for (const test of (feature as any).tests || []) {
+                            results.push({
+                                test,
+                                passed: false,
+                                error: `Test execution failed: ${error instanceof Error ? error.message : String(error)}`
+                            });
+                        }
+                    }
+                }
+            } else {
+                this.outputChannel.appendLine(`❌ No automated test file found. Generate code first to create automated tests.`);
+                results = [];
+                vscode.window.showWarningMessage('No automated tests found. Please generate code first to create automated test files.');
+            }
+
+            // Display summary
+            const passedCount = results.filter(r => r.passed).length;
+            const totalCount = results.length;
+            const passRate = totalCount > 0 ? (passedCount / totalCount * 100).toFixed(1) : '0';
+            const duration = Date.now() - startTime;
+
+            this.outputChannel.appendLine(`\n${'='.repeat(60)}`);
+            this.outputChannel.appendLine(`📊 SUMMARY:`);
+            this.outputChannel.appendLine(`   ${passedCount}/${totalCount} tests passed (${passRate}%)`);
+            this.outputChannel.appendLine(`   Total duration: ${duration}ms`);
+            this.outputChannel.appendLine(`${'='.repeat(60)}`);
+
+            logTestRunner('Test execution completed', {
+                nodeId: node.id,
+                nodeTitle: node.title,
+                passed: passedCount,
+                total: totalCount,
+                duration
+            });
+
+            return results;
+        } finally {
+            // Always release lock, even if test execution fails
+            lock.release();
+        }
     }
 
 

@@ -231,8 +231,8 @@ export class CLIAgentLauncher {
                 command = command.replace(/^aider\s+/, 'aider ' + flagsToAdd);
             }
         } else if (command.startsWith('codex ') || command.includes(' codex ')) {
-            if (flags.codex.fullAuto && !command.includes('--full-auto')) {
-                command = command.replace(/^codex\s+/, 'codex --full-auto ');
+            if (flags.codex.dangerouslyBypassApprovalsAndSandbox && !command.includes('--dangerously-bypass-approvals-and-sandbox')) {
+                command = command.replace(/^codex\s+/, 'codex --dangerously-bypass-approvals-and-sandbox ');
             }
         } else if (command.startsWith('gemini ') || command.includes(' gemini ')) {
             if (flags.gemini.yolo && !command.includes('--yolo')) {

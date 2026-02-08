@@ -86,7 +86,7 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
       const activePreset = cliSettings.preset || 'claude';
       if (activePreset === 'claude' && flags?.claude?.dangerouslySkipPermissions) {setSkipPermissions(true);}
       else if (activePreset === 'aider' && flags?.aider?.yesAlways) {setSkipPermissions(true);}
-      else if (activePreset === 'codex' && flags?.codex?.fullAuto) {setSkipPermissions(true);}
+      else if (activePreset === 'codex' && flags?.codex?.dangerouslyBypassApprovalsAndSandbox) {setSkipPermissions(true);}
       else if (activePreset === 'gemini' && flags?.gemini?.yolo) {setSkipPermissions(true);}
     }
   }, [cliSettings]);
@@ -261,7 +261,7 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
                 checked={skipPermissions}
                 onChange={(e) => setSkipPermissions(e.target.checked)}
               />
-              <span>Full Auto (--full-auto)</span>
+              <span>Bypass Approvals (--dangerously-bypass-approvals-and-sandbox)</span>
             </label>
           )}
           {selectedCli === 'gemini' && (

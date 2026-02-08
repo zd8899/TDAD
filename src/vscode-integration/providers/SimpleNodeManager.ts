@@ -251,16 +251,19 @@ export class SimpleNodeManager {
         const index = this._nodes.findIndex(n => n.id === updatedNode.id);
         if (index >= 0) {
             // Node is in current folder context - update in memory and save
+            logCanvas(`updateNode: Node ${updatedNode.id} (status: ${(updatedNode as any).status}) is in current context, updating at index ${index}`);
             this._nodes[index] = updatedNode;
             this.saveDebounced();
             this.notifyNodeUpdated(updatedNode);
         } else {
             // Node is NOT in current context (e.g., Slack trigger for different workflow)
             // Update directly in the correct workflow file
-            logCanvas(`updateNode: Node ${updatedNode.id} not in current context, using storage.updateNodeById`);
+            logCanvas(`updateNode: Node ${updatedNode.id} (status: ${(updatedNode as any).status}) NOT in current context, using storage.updateNodeById`);
             const success = this.storage.updateNodeById(updatedNode);
             if (success) {
                 this.notifyNodeUpdated(updatedNode);
+            } else {
+                logError('NODE_MANAGER', `updateNode: Failed to update node ${updatedNode.id} via updateNodeById`);
             }
         }
     }
@@ -503,6 +506,10 @@ export class SimpleNodeManager {
      */
     public saveNow(): void {
         try {
+            // Log what's being saved for debugging status issues
+            const statusSummary = this._nodes.map(n => `${n.id}:${(n as any).status || 'no-status'}`).join(', ');
+            logCanvas(`saveNow: Saving ${this._nodes.length} nodes to folder ${this._currentFolderId || 'root'} - statuses: [${statusSummary}]`);
+
             // Suppress file watcher refresh during internal saves
             SimplifiedWorkflowCanvasProvider.suppressFileWatcherRefresh = true;
 
@@ -513,7 +520,7 @@ export class SimpleNodeManager {
                 SimplifiedWorkflowCanvasProvider.suppressFileWatcherRefresh = false;
             }, 1000);
         } catch (error) {
-            logCanvas('Failed to save feature-map.json');
+            logError('NODE_MANAGER', 'Failed to save workflow JSON', error);
         }
     }
 

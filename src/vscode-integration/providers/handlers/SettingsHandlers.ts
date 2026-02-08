@@ -200,7 +200,7 @@ export class SettingsHandlers {
             // Apply the skipPermissions toggle to the selected preset's flag
             if (preset === 'claude') {updatedFlags.claude = { dangerouslySkipPermissions: skipPermissions };}
             else if (preset === 'aider') {updatedFlags.aider = { ...updatedFlags.aider, yesAlways: skipPermissions };}
-            else if (preset === 'codex') {updatedFlags.codex = { fullAuto: skipPermissions };}
+            else if (preset === 'codex') {updatedFlags.codex = { dangerouslyBypassApprovalsAndSandbox: skipPermissions };}
             else if (preset === 'gemini') {updatedFlags.gemini = { yolo: skipPermissions };}
             await config.update('agent.cli.permissionFlags', updatedFlags, vscode.ConfigurationTarget.Workspace);
 

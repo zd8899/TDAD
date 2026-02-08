@@ -283,7 +283,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 if (newFlags.aider.yesAlways) {flags += '--yes ';}
                 if (newFlags.aider.autoCommit) {flags += '--auto-commits ';}
             }
-            if (selectedPreset === 'codex' && newFlags.codex.fullAuto) {flags = '--full-auto ';}
+            if (selectedPreset === 'codex' && newFlags.codex.dangerouslyBypassApprovalsAndSandbox) {flags = '--dangerously-bypass-approvals-and-sandbox ';}
             if (selectedPreset === 'gemini' && newFlags.gemini.yolo) {flags = '--yolo ';}
 
             if (preset && preset.baseCommand) {
@@ -595,8 +595,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 )}
                                 {selectedPreset === 'codex' && (
                                     <label style={checkboxContainerStyle}>
-                                        <input type="checkbox" checked={permissionFlags.codex.fullAuto} onChange={(e) => updatePermissionFlag('codex', 'fullAuto', e.target.checked)} />
-                                        <span>Full Auto (--full-auto)</span>
+                                        <input type="checkbox" checked={permissionFlags.codex.dangerouslyBypassApprovalsAndSandbox} onChange={(e) => updatePermissionFlag('codex', 'dangerouslyBypassApprovalsAndSandbox', e.target.checked)} />
+                                        <span>Bypass Approvals (--dangerously-bypass-approvals-and-sandbox)</span>
                                     </label>
                                 )}
                                 {selectedPreset === 'gemini' && (

@@ -304,7 +304,7 @@
               "autoCommit": false
             },
             "codex": {
-              "fullAuto": false
+              "dangerouslyBypassApprovalsAndSandbox": false
             },
             "gemini": {
               "yolo": false
