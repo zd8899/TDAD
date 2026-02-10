@@ -15,6 +15,7 @@ import { getWorkflowFolderName } from '../../../shared/utils/stringUtils';
 import { getNodeBasePath, getFeatureFilePath } from '../../../shared/utils/nodePathUtils';
 import { FeatureMapStorage } from '../../../infrastructure/storage/FeatureMapStorage';
 import { SimpleNodeManager } from '../SimpleNodeManager';
+import { NodeStatusService } from '../NodeStatusService';
 import { ScaffoldingService } from '../../../core/workflows/ScaffoldingService';
 import { PromptGenerationService } from '../../../core/services/PromptGenerationService';
 
@@ -23,7 +24,8 @@ export class BddSpecHandlers {
         private readonly webview: vscode.Webview,
         private readonly storage: FeatureMapStorage,
         private readonly nodeManager: SimpleNodeManager,
-        private readonly context: vscode.ExtensionContext
+        private readonly context: vscode.ExtensionContext,
+        private readonly nodeStatusService: NodeStatusService
     ) {}
 
     /**
@@ -215,7 +217,7 @@ export class BddSpecHandlers {
             const node = this.nodeManager.getNodeById(nodeId);
             if (node) {
                 (node as any).bddSpecFile = filePath;
-                (node as any).status = 'spec-saved';
+                this.nodeStatusService.setStatusOnNode(node, 'planned');
                 // Update file status fields (single source of truth)
                 (node as any).hasBddSpec = true;
                 (node as any).bddHasRealContent = bddSpec.length > 0 && !bddSpec.includes('# TODO: Add more scenarios based on requirements');

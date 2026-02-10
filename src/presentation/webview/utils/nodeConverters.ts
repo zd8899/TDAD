@@ -9,8 +9,6 @@ interface NodeHandlers {
   onEditDescription?: (node: Node) => void;
   onNavigateInto?: (folderId: string) => void;
   edges?: any[];
-  workingNodeId?: string | null;
-  automationPhase?: 'bdd' | 'tests' | 'run' | 'fix' | null;
 }
 
 /**
@@ -59,8 +57,6 @@ export const convertTDADNodeToReactFlow = (
     onSelect: handlers?.onSelect,
     onEditDescription: handlers?.onEditDescription,
     edges: handlers?.edges || [],
-    isWorking: handlers?.workingNodeId === tdadNode.id,
-    automationPhase: handlers?.workingNodeId === tdadNode.id ? handlers?.automationPhase : null,
     hasBddSpec: (tdadNode as any).hasBddSpec,
     hasTestDetails: (tdadNode as any).hasTestDetails,
     bddHasRealContent: (tdadNode as any).bddHasRealContent,

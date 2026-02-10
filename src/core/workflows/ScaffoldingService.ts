@@ -312,6 +312,14 @@ ${gherkinComment}test.describe('${toTitleCase(nodeName)}', () => {
     }
 
     /**
+     * Delegate to FixturesGenerator.
+     * Ensures all Playwright runs using .tdad/playwright.config.js use global lock queue.
+     */
+    ensurePlaywrightGlobalLockFile(workspaceRoot: string): string {
+        return this.fixturesGenerator.ensurePlaywrightGlobalLockFile(workspaceRoot);
+    }
+
+    /**
      * Sprint 17: Consolidated scaffolding method for node files
      */
     scaffoldNodeFilesIfNeeded(

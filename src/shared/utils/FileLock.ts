@@ -17,7 +17,9 @@ export class FileLock {
     private lockAcquired = false;
     private processId: number;
     private checkInterval = 100; // ms - how often to check for lock availability
-    private staleThreshold = 300000; // ms - 5 minutes, after which a lock is considered stale
+    // Long-held locks are logged, but NOT force-released while owner PID is alive.
+    // This avoids overlapping runs for legitimately long Playwright executions.
+    private longHeldWarningThreshold = 300000; // ms - 5 minutes
 
     constructor(lockFilePath: string) {
         this.lockFile = lockFilePath;
@@ -35,12 +37,17 @@ export class FileLock {
      * @param timeout Maximum time to wait for lock (ms)
      * @returns true if lock acquired, false if timeout
      */
-    async acquire(timeout = 600000): Promise<boolean> {
+    async acquire(timeout = 600000, shouldAbort?: () => boolean): Promise<boolean> {
         const startTime = Date.now();
 
         logger.log('FILE-LOCK', `Process ${this.processId} attempting to acquire lock: ${this.lockFile}`);
 
         while (Date.now() - startTime < timeout) {
+            if (shouldAbort?.()) {
+                logger.log('FILE-LOCK', `Process ${this.processId} aborted lock acquisition`);
+                return false;
+            }
+
             // Try to acquire lock
             if (this.tryAcquire()) {
                 this.lockAcquired = true;
@@ -136,7 +143,13 @@ export class FileLock {
     }
 
     /**
-     * Check if lock is stale (process no longer exists or too old)
+     * Check if lock is stale.
+     *
+     * A lock is stale only when:
+     * - lock file is unreadable/malformed, or
+     * - owning process is no longer running.
+     *
+     * Age alone does not mark a lock stale because long-running tests are valid.
      */
     private isLockStale(): boolean {
         const lockInfo = this.readLockInfo();
@@ -144,17 +157,19 @@ export class FileLock {
             return true; // Can't read lock = stale
         }
 
-        // Check if lock is too old
-        const age = Date.now() - lockInfo.timestamp;
-        if (age > this.staleThreshold) {
-            logger.log('FILE-LOCK', `Lock is ${Math.floor(age / 1000)}s old (threshold: ${this.staleThreshold / 1000}s)`);
-            return true;
-        }
-
         // Check if process still exists
         if (!this.isProcessRunning(lockInfo.pid)) {
             logger.log('FILE-LOCK', `Lock held by dead process ${lockInfo.pid}`);
             return true;
+        }
+
+        // Diagnostic only: long-running lock held by a live process.
+        const age = Date.now() - lockInfo.timestamp;
+        if (age > this.longHeldWarningThreshold) {
+            logger.log(
+                'FILE-LOCK',
+                `Lock is ${Math.floor(age / 1000)}s old, but owner process ${lockInfo.pid} is alive; continuing to wait`
+            );
         }
 
         return false;

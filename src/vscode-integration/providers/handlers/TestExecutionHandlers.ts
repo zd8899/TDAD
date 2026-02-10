@@ -17,6 +17,7 @@ import { getWorkflowFolderName } from '../../../shared/utils/stringUtils';
 import { getTestFilePath, getAbsolutePath } from '../../../shared/utils/nodePathUtils';
 import { FeatureMapStorage } from '../../../infrastructure/storage/FeatureMapStorage';
 import { SimpleNodeManager } from '../SimpleNodeManager';
+import { NodeStatusService } from '../NodeStatusService';
 import { TestFileParser } from '../../../core/testing/TestFileParser';
 import { TestOrchestrator } from '../../testing/TestOrchestrator';
 import { GoldenPacketAssembler } from '../../../core/services/GoldenPacketAssembler';
@@ -29,7 +30,8 @@ export class TestExecutionHandlers {
         private readonly nodeManager: SimpleNodeManager,
         private readonly context: vscode.ExtensionContext,
         private readonly testOrchestrator: TestOrchestrator,
-        private readonly testResultsCache: Map<string, TestResult[]>
+        private readonly testResultsCache: Map<string, TestResult[]>,
+        private readonly nodeStatusService: NodeStatusService
     ) {}
 
     /**
@@ -173,15 +175,15 @@ export class TestExecutionHandlers {
             const totalCount = testResults.length;
 
             if (totalCount === 0) {
-                (node as any).status = 'pending';
+                this.nodeStatusService.setStatusOnNode(node, 'pending');
                 vscode.window.showWarningMessage(`⚠️ No tests found for "${node.title}". Check test file and Playwright configuration.`);
             } else if (testResults.every(r => r.passed)) {
-                (node as any).status = 'passed';
+                this.nodeStatusService.setStatusOnNode(node, 'passed');
                 // Update file status fields when tests pass (real content confirmed)
                 (node as any).testHasRealContent = true;
                 vscode.window.showInformationMessage(`✅ All tests passed for "${node.title}" (${passedCount}/${totalCount})`);
             } else {
-                (node as any).status = 'failed';
+                this.nodeStatusService.setStatusOnNode(node, 'failed');
                 // Update file status fields when tests fail (real content confirmed)
                 (node as any).testHasRealContent = true;
                 vscode.window.showWarningMessage(`❌ Some tests failed for "${node.title}" (${passedCount}/${totalCount} passed)`);

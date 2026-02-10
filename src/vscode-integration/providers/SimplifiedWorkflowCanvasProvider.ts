@@ -288,8 +288,9 @@ export class SimplifiedWorkflowCanvasProvider {
         updates.forEach((nodeUpdates, nodeId) => {
             const node = this._nodeManager.getNodeById(nodeId);
             if (node) {
-                Object.assign(node, nodeUpdates);
-                this._nodeManager.updateNode(node);
+                if (this._applyWhitelistedFileStatus(node as FeatureNode, nodeUpdates)) {
+                    this._nodeManager.updateNode(node);
+                }
             }
         });
     }
@@ -303,10 +304,35 @@ export class SimplifiedWorkflowCanvasProvider {
             n.nodeType === 'feature' && 'fileName' in n && (n as any).fileName === fileName
         );
         if (node) {
-            Object.assign(node, updates);
-            this._nodeManager.updateNode(node);
-            logCanvas(`[FileStatusSync] Updated node ${node.id} (${fileName}):`, updates);
+            if (this._applyWhitelistedFileStatus(node as FeatureNode, updates)) {
+                this._nodeManager.updateNode(node);
+                logCanvas(`[FileStatusSync] Updated node ${node.id} (${fileName}):`, updates);
+            }
         }
+    }
+
+    /**
+     * Apply only file-status fields from sync operations.
+     * Prevents any accidental writes to persisted node.status (single source of truth).
+     */
+    private _applyWhitelistedFileStatus(node: FeatureNode, updates: Partial<FeatureNode>): boolean {
+        let changed = false;
+        const mutable = node as any;
+        const current = mutable as Record<string, any>;
+
+        const apply = (key: 'hasBddSpec' | 'hasTestDetails' | 'bddHasRealContent' | 'testHasRealContent') => {
+            if (key in updates && current[key] !== (updates as any)[key]) {
+                current[key] = (updates as any)[key];
+                changed = true;
+            }
+        };
+
+        apply('hasBddSpec');
+        apply('hasTestDetails');
+        apply('bddHasRealContent');
+        apply('testHasRealContent');
+
+        return changed;
     }
 
     private _setupMessageHandlers() {
@@ -842,26 +868,29 @@ export class SimplifiedWorkflowCanvasProvider {
      *
      * Only ONE orchestrator should handle the signal - prioritize single-node if running
      */
-    public async handleAgentDoneSignal(): Promise<void> {
+    public async handleAgentDoneSignal(): Promise<boolean> {
         // Check if single-node orchestrator is running - it takes priority
         const singleNodeOrchestrator = this._testWorkflowHandlers.getSingleNodeOrchestrator();
         if (singleNodeOrchestrator?.isRunning()) {
-            await this._testWorkflowHandlers.handleSingleNodeAgentDone();
-            return;
+            return await this._testWorkflowHandlers.handleSingleNodeAgentDone();
         }
 
         // Otherwise, handle multi-node orchestrator
         if (this._automationHandlers.isRunning()) {
             await this._automationHandlers.handleAgentDone();
+            return true;
         }
+
+        logCanvas('[AgentDone] Ignoring AGENT_DONE signal: no running orchestrator');
+        return false;
     }
 
     /**
      * Handle per-node AGENT_DONE signal for parallel execution
      * Called from extension.ts when .tdad/tasks/{nodeId}/AGENT_DONE.md is created/changed
      */
-    public async handlePerNodeAgentDone(nodeId: string): Promise<void> {
-        await this._testWorkflowHandlers.handlePerNodeAgentDone(nodeId);
+    public async handlePerNodeAgentDone(nodeId: string): Promise<boolean> {
+        return await this._testWorkflowHandlers.handlePerNodeAgentDone(nodeId);
     }
 
     /**

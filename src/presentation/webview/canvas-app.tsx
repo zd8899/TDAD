@@ -147,10 +147,22 @@ const CanvasApp: React.FC = () => {
   // Ref for debouncing position updates
   const positionUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Show all nodes (folders already filtered at backend)
+  // Guard against out-of-context node updates leaking into current view.
+  // Keep current-folder nodes and intentional ghost nodes only.
   const filterVisibleNodes = useCallback((allNodes: Node[]) => {
-    return allNodes;
-  }, []);
+    return allNodes.filter((node: any) => {
+      if (node?.isGhost === true) {
+        return true;
+      }
+      const parentId = (node?.parentId ?? null) as string | null;
+      // Legacy data may miss parentId for nodes loaded from nested workflows.
+      // In nested folder view, treat missing parentId as in-context.
+      if (currentFolderId !== null && parentId === null) {
+        return true;
+      }
+      return parentId === currentFolderId;
+    });
+  }, [currentFolderId]);
 
   // Create message handler state object for the extracted hook
   const messageState: CanvasMessageState = {
@@ -257,8 +269,7 @@ const CanvasApp: React.FC = () => {
     },
     onNavigateInto: handleNavigateIntoFolder,
     edges: edges,
-    workingNodeId: workingNodeId,
-    automationPhase: automationPhase
+    currentFolderId
   };
 
   // NOTE: filterVisibleNodes is now defined earlier (before handleMessage) to avoid initialization order issues
@@ -291,30 +302,6 @@ const CanvasApp: React.FC = () => {
       });
     }
   }, [allNodes, nodeCounter, filterVisibleNodes]);
-
-  // Real-time status updates - re-render nodes when automation status changes
-  // This ensures progress bars and status indicators update during automation
-  useEffect(() => {
-    if (allNodes.length > 0 && (workingNodeId || automationPhase)) {
-      const visibleNodes = filterVisibleNodes(allNodes);
-      setNodes(currentNodes => {
-        const selectedNodeIds = new Set(currentNodes.filter(n => n.selected).map(n => n.id));
-        const currentPositions = new Map(currentNodes.map(n => [n.id, n.position]));
-
-        return visibleNodes.map((node, index) => {
-          const rfNode = convertTDADNodeToReactFlow(node, nodeCounter + index, handlersRef.current);
-          if (selectedNodeIds.has(rfNode.id)) {
-            rfNode.selected = true;
-          }
-          const currentPosition = currentPositions.get(rfNode.id);
-          if (currentPosition) {
-            rfNode.position = currentPosition;
-          }
-          return rfNode;
-        });
-      });
-    }
-  }, [workingNodeId, automationPhase, allNodes, nodeCounter, filterVisibleNodes]);
 
   // Auto-layout on first load if all nodes are at (0,0) + fit view to center
   // Also triggers when navigating into folders (currentFolderId changes)
@@ -789,7 +776,6 @@ const CanvasApp: React.FC = () => {
               const status = node.data?.node?.status;
               if (status === 'passed') {return '#22c55e';}
               if (status === 'failed') {return '#ef4444';}
-              if (status === 'running') {return '#3b82f6';}
               return '#6366f1';
             }}
             maskColor="rgba(59, 130, 246, 0.1)"
@@ -1083,4 +1069,3 @@ const CanvasAppWrapper: React.FC = () => (
   );
 
 export default CanvasAppWrapper;
-

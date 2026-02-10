@@ -183,6 +183,14 @@ export class SingleNodeOrchestrator {
     public stop(): void {
         logger.log('SINGLE-NODE-ORCHESTRATOR', 'Stopping automation');
 
+        if (this.testRunner && typeof this.testRunner.cancelCurrentTest === 'function') {
+            try {
+                this.testRunner.cancelCurrentTest();
+            } catch (error) {
+                logError('SINGLE-NODE-ORCHESTRATOR', 'Failed to cancel current test on stop', error);
+            }
+        }
+
         this.updateState({
             status: 'stopped',
             message: 'Automation stopped by user'
@@ -490,20 +498,19 @@ export class SingleNodeOrchestrator {
 
         try {
             const results = await this.testRunner.runNodeTests(this.targetNode, '');
+            const allPassed = results.length > 0 && results.every((r: TestResult) => r.passed);
+
+            // Store results on node for Golden Packet
+            (this.targetNode as any).lastTestResults = results;
+
+            // Always publish latest test results, even if stop was requested mid-run.
+            this.callbacks.onTestResults?.(this.targetNode.id, results);
 
             // Check if automation was stopped while tests were running
             if (this.state.status !== 'running') {
                 logger.log('SINGLE-NODE-ORCHESTRATOR', 'Automation stopped during test execution, aborting');
                 return;
             }
-
-            const allPassed = results.length > 0 && results.every((r: TestResult) => r.passed);
-
-            // Store results on node for Golden Packet
-            (this.targetNode as any).lastTestResults = results;
-
-            // Notify callbacks
-            this.callbacks.onTestResults?.(this.targetNode.id, results);
 
             if (allPassed) {
                 logger.log('SINGLE-NODE-ORCHESTRATOR', `Tests PASSED for: ${this.targetNode.title}`);

@@ -429,22 +429,36 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Sprint 13: Agent Orchestrator - File System Watcher for AGENT_DONE.md
     const agentDoneWatcher = vscode.workspace.createFileSystemWatcher('**/.tdad/AGENT_DONE.md');
+    const AGENT_DONE_DISPATCH_DELAY_MS = 180;
+    const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 
     agentDoneWatcher.onDidCreate(async (uri) => {
         logExtension(`Agent done signal detected (created): ${uri.fsPath}`);
-        await handleAgentDone();
+        await handleAgentDone('created', uri.fsPath);
     });
 
     agentDoneWatcher.onDidChange(async (uri) => {
         logExtension(`Agent done signal detected (changed): ${uri.fsPath}`);
-        await handleAgentDone();
+        await handleAgentDone('changed', uri.fsPath);
     });
 
-    async function handleAgentDone() {
-        // Notify the canvas provider about agent completion
-        if (SimplifiedWorkflowCanvasProvider.currentPanel) {
-            // Call the handler directly instead of routing through webview
-            await SimplifiedWorkflowCanvasProvider.currentPanel.handleAgentDoneSignal();
+    async function handleAgentDone(eventType: 'created' | 'changed', filePath: string) {
+        try {
+            await wait(AGENT_DONE_DISPATCH_DELAY_MS);
+            const panel = SimplifiedWorkflowCanvasProvider.currentPanel;
+            if (!panel) {
+                logExtension(`Agent done signal (${eventType}) ignored (no active canvas panel): ${filePath}`);
+                return;
+            }
+
+            const handled = await panel.handleAgentDoneSignal();
+            if (!handled) {
+                logExtension(`Agent done signal (${eventType}) ignored (no running orchestrator): ${filePath}`);
+            } else {
+                logExtension(`Agent done signal (${eventType}) processed: ${filePath}`);
+            }
+        } catch (error) {
+            logError('EXTENSION', `Failed to process AGENT_DONE signal (${eventType})`, error);
         }
     }
 
@@ -457,7 +471,7 @@ export function activate(context: vscode.ExtensionContext) {
         const nodeId = extractNodeIdFromAgentDonePath(uri.fsPath);
         if (nodeId) {
             logExtension(`Per-node agent done signal (created): ${nodeId}`);
-            await handlePerNodeAgentDone(nodeId);
+            await handlePerNodeAgentDone(nodeId, 'created', uri.fsPath);
         }
     });
 
@@ -465,19 +479,41 @@ export function activate(context: vscode.ExtensionContext) {
         const nodeId = extractNodeIdFromAgentDonePath(uri.fsPath);
         if (nodeId) {
             logExtension(`Per-node agent done signal (changed): ${nodeId}`);
-            await handlePerNodeAgentDone(nodeId);
+            await handlePerNodeAgentDone(nodeId, 'changed', uri.fsPath);
         }
     });
 
     function extractNodeIdFromAgentDonePath(filePath: string): string | null {
         const normalized = filePath.replace(/\\/g, '/');
         const match = normalized.match(/\.tdad\/tasks\/([^/]+)\/AGENT_DONE\.md$/);
-        return match ? match[1] : null;
+        if (!match) {
+            return null;
+        }
+        const rawNodeId = match[1];
+        try {
+            return decodeURIComponent(rawNodeId);
+        } catch {
+            return rawNodeId;
+        }
     }
 
-    async function handlePerNodeAgentDone(nodeId: string) {
-        if (SimplifiedWorkflowCanvasProvider.currentPanel) {
-            await SimplifiedWorkflowCanvasProvider.currentPanel.handlePerNodeAgentDone(nodeId);
+    async function handlePerNodeAgentDone(nodeId: string, eventType: 'created' | 'changed', filePath: string) {
+        try {
+            await wait(AGENT_DONE_DISPATCH_DELAY_MS);
+            const panel = SimplifiedWorkflowCanvasProvider.currentPanel;
+            if (!panel) {
+                logExtension(`Per-node agent done (${eventType}) ignored for ${nodeId} (no active canvas panel): ${filePath}`);
+                return;
+            }
+
+            const handled = await panel.handlePerNodeAgentDone(nodeId);
+            if (!handled) {
+                logExtension(`Per-node agent done (${eventType}) ignored for ${nodeId} (no matching running orchestrator): ${filePath}`);
+            } else {
+                logExtension(`Per-node agent done (${eventType}) processed for ${nodeId}: ${filePath}`);
+            }
+        } catch (error) {
+            logError('EXTENSION', `Failed to process per-node AGENT_DONE (${eventType}) for ${nodeId}`, error);
         }
     }
 

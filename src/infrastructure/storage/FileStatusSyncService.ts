@@ -7,9 +7,8 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Node, FeatureNode } from '../../shared/types';
-import { getFeatureFilePath, getTestFilePath } from '../../shared/utils/nodePathUtils';
-import { getWorkflowFolderName } from '../../shared/utils/stringUtils';
 import { logCanvas } from '../../shared/utils/Logger';
+import { resolveNodeFileStatus } from '../../shared/utils/nodeFileStatusResolver';
 
 export class FileStatusSyncService {
     private fileWatchers: vscode.FileSystemWatcher[] = [];
@@ -23,25 +22,31 @@ export class FileStatusSyncService {
     initialize(updateCallback: (nodeId: string, updates: Partial<FeatureNode>) => void): void {
         this.updateCallback = updateCallback;
 
-        // Watch for BDD spec files (*.feature.md)
+        // Watch for BDD spec files (*.feature and legacy *.feature.md)
         const bddWatcher = vscode.workspace.createFileSystemWatcher(
+            new vscode.RelativePattern(this.workspacePath, '**/*.feature')
+        );
+        const bddLegacyWatcher = vscode.workspace.createFileSystemWatcher(
             new vscode.RelativePattern(this.workspacePath, '**/*.feature.md')
         );
 
         bddWatcher.onDidCreate(uri => this.handleBddFileChange(uri, 'created'));
         bddWatcher.onDidChange(uri => this.handleBddFileChange(uri, 'changed'));
         bddWatcher.onDidDelete(uri => this.handleBddFileChange(uri, 'deleted'));
+        bddLegacyWatcher.onDidCreate(uri => this.handleBddFileChange(uri, 'created'));
+        bddLegacyWatcher.onDidChange(uri => this.handleBddFileChange(uri, 'changed'));
+        bddLegacyWatcher.onDidDelete(uri => this.handleBddFileChange(uri, 'deleted'));
 
-        // Watch for test files (*.spec.ts, *.test.ts)
+        // Watch for test files used by TDAD (*.test.js) and legacy TS tests
         const testWatcher = vscode.workspace.createFileSystemWatcher(
-            new vscode.RelativePattern(this.workspacePath, '**/*.{spec,test}.ts')
+            new vscode.RelativePattern(this.workspacePath, '**/*.{spec,test}.{js,ts}')
         );
 
         testWatcher.onDidCreate(uri => this.handleTestFileChange(uri, 'created'));
         testWatcher.onDidChange(uri => this.handleTestFileChange(uri, 'changed'));
         testWatcher.onDidDelete(uri => this.handleTestFileChange(uri, 'deleted'));
 
-        this.fileWatchers.push(bddWatcher, testWatcher);
+        this.fileWatchers.push(bddWatcher, bddLegacyWatcher, testWatcher);
         logCanvas('[FileStatusSync] File watchers initialized');
     }
 
@@ -49,41 +54,13 @@ export class FileStatusSyncService {
      * Sync status fields for a single node
      */
     async syncNodeStatus(node: FeatureNode): Promise<Partial<FeatureNode>> {
-        if (!node.fileName) {
-            return {};
-        }
-
-        const workflowFolderName = getWorkflowFolderName(node.workflowId);
-        const bddPath = getFeatureFilePath(workflowFolderName, node.fileName);
-        const testPath = getTestFilePath(workflowFolderName, node.fileName);
-
-        const updates: Partial<FeatureNode> = {};
-
-        // Check BDD file
-        const bddFullPath = path.join(this.workspacePath, bddPath);
-        const bddExists = fs.existsSync(bddFullPath);
-        updates.hasBddSpec = bddExists;
-
-        if (bddExists) {
-            const bddContent = fs.readFileSync(bddFullPath, 'utf8');
-            updates.bddHasRealContent = this.hasRealBddContent(bddContent);
-        } else {
-            updates.bddHasRealContent = false;
-        }
-
-        // Check test file
-        const testFullPath = path.join(this.workspacePath, testPath);
-        const testExists = fs.existsSync(testFullPath);
-        updates.hasTestDetails = testExists;
-
-        if (testExists) {
-            const testContent = fs.readFileSync(testFullPath, 'utf8');
-            updates.testHasRealContent = this.hasRealTestContent(testContent);
-        } else {
-            updates.testHasRealContent = false;
-        }
-
-        return updates;
+        const status = resolveNodeFileStatus(this.workspacePath, node as Node);
+        return {
+            hasBddSpec: status.hasBddSpec,
+            hasTestDetails: status.hasTestDetails,
+            bddHasRealContent: status.bddHasRealContent,
+            testHasRealContent: status.testHasRealContent
+        };
     }
 
     /**
@@ -123,7 +100,7 @@ export class FileStatusSyncService {
     private async handleBddFileChange(uri: vscode.Uri, changeType: 'created' | 'changed' | 'deleted'): Promise<void> {
         if (!this.updateCallback) {return;}
 
-        const fileName = path.basename(uri.fsPath, '.feature.md');
+        const fileName = path.basename(uri.fsPath).replace(/\.feature(\.md)?$/, '');
         logCanvas(`[FileStatusSync] BDD file ${changeType}: ${fileName}`);
 
         // Find node by fileName (this requires access to nodes - will be provided by the callback)
@@ -149,7 +126,7 @@ export class FileStatusSyncService {
     private async handleTestFileChange(uri: vscode.Uri, changeType: 'created' | 'changed' | 'deleted'): Promise<void> {
         if (!this.updateCallback) {return;}
 
-        const fileName = path.basename(uri.fsPath).replace(/\.(spec|test)\.ts$/, '');
+        const fileName = path.basename(uri.fsPath).replace(/\.(spec|test)\.(ts|js)$/, '');
         logCanvas(`[FileStatusSync] Test file ${changeType}: ${fileName}`);
 
         const updates: Partial<FeatureNode> = {

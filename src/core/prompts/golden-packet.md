@@ -69,7 +69,7 @@ Read these files to understand the current implementation:
 ## 🛠️ Project Context (Tech Stack)
 {{projectContext}}
 
-**Tests run via:** `npx playwright test --config=.tdad/playwright.config.js`
+**Tests run via:** `npx playwright test --config=.tdad/playwright.config.js --reporter=list,json`
 {{/if}}
 
 {{#if dependenciesContext}}
@@ -150,7 +150,7 @@ Check the **trace file** listed above for complete request/response data.
 
 ## ✅ When Done
 
-Write to `.tdad/AGENT_DONE.md` with a DETAILED description of what you tried:
+Write to `AGENT_DONE.md` with a DETAILED description of what you tried:
 
 ```
 DONE:

@@ -11,23 +11,24 @@
 import * as vscode from 'vscode';
 import { Node, TestResult } from '../../../shared/types';
 import { AutomationProgressUpdate } from '../../../shared/types/slack';
-import { logError, logger } from '../../../shared/utils/Logger';
-import { FileNameGenerator } from '../../../shared/utils/fileNameGenerator';
+import { logCanvas, logError, logger } from '../../../shared/utils/Logger';
 import { FeatureMapStorage } from '../../../infrastructure/storage/FeatureMapStorage';
 import { SimpleNodeManager } from '../SimpleNodeManager';
+import { NodeStatusService } from '../NodeStatusService';
 import { TestOrchestrator } from '../../testing/TestOrchestrator';
-import { ScaffoldingService } from '../../../core/workflows/ScaffoldingService';
 import { SingleNodeOrchestrator } from '../../../core/services/SingleNodeOrchestrator';
 import { BddSpecHandlers } from './BddSpecHandlers';
 import { TestGenerationHandlers } from './TestGenerationHandlers';
 import { TestExecutionHandlers } from './TestExecutionHandlers';
 import { NodeAutomationHandlers } from './NodeAutomationHandlers';
+import { resolveNodeFileStatus } from '../../../shared/utils/nodeFileStatusResolver';
 
 export class TestWorkflowHandlers {
     private readonly bddSpecHandlers: BddSpecHandlers;
     private readonly testGenerationHandlers: TestGenerationHandlers;
     private readonly testExecutionHandlers: TestExecutionHandlers;
     private readonly nodeAutomationHandlers: NodeAutomationHandlers;
+    private readonly nodeStatusService: NodeStatusService;
 
     constructor(
         private readonly webview: vscode.Webview,
@@ -37,27 +38,60 @@ export class TestWorkflowHandlers {
         testOrchestrator: TestOrchestrator,
         testResultsCache: Map<string, TestResult[]>
     ) {
+        this.nodeStatusService = new NodeStatusService(nodeManager);
+
         // Initialize sub-handlers
-        this.bddSpecHandlers = new BddSpecHandlers(webview, storage, nodeManager, context);
-        this.testGenerationHandlers = new TestGenerationHandlers(webview, storage, nodeManager);
+        this.bddSpecHandlers = new BddSpecHandlers(webview, storage, nodeManager, context, this.nodeStatusService);
+        this.testGenerationHandlers = new TestGenerationHandlers(webview, storage, nodeManager, this.nodeStatusService);
         this.testExecutionHandlers = new TestExecutionHandlers(
-            webview, storage, nodeManager, context, testOrchestrator, testResultsCache
+            webview, storage, nodeManager, context, testOrchestrator, testResultsCache, this.nodeStatusService
         );
         this.nodeAutomationHandlers = new NodeAutomationHandlers(
             webview, storage, nodeManager, context, testResultsCache,
             this.testExecutionHandlers,
-            this.handleCheckSingleNodeFileStatus.bind(this)
+            this.handleCheckSingleNodeFileStatus.bind(this),
+            this.nodeStatusService
         );
     }
 
     /**
-     * Get the base path and fileName for a node's workflow files
+     * Apply file-status fields to a node and persist only if changed.
      */
-    private getNodeFilePaths(node: Node): { basePath: string; fileName: string } {
-        const workflowFolderName = node.workflowId?.replace('.workflow.json', '').replace(/-workflow$/, '') || 'default';
-        const fileName = FileNameGenerator.generate(node.title);
-        const basePath = `.tdad/workflows/${workflowFolderName}/${fileName}`;
-        return { basePath, fileName };
+    private applyFileStatusToNode(
+        node: Node,
+        status: { hasBddSpec: boolean; hasTestDetails: boolean; bddHasRealContent: boolean; testHasRealContent: boolean }
+    ): boolean {
+        let changed = false;
+        const mutable = node as any;
+        if (mutable.status === 'generating' || mutable.status === 'testing') {
+            mutable.status = 'pending';
+            changed = true;
+            logCanvas(`[NodeStatus] ${node.id}: normalized stale transient status to pending during file-status sync`);
+        }
+
+        if (mutable.hasBddSpec !== status.hasBddSpec) {
+            mutable.hasBddSpec = status.hasBddSpec;
+            changed = true;
+        }
+        if (mutable.hasTestDetails !== status.hasTestDetails) {
+            mutable.hasTestDetails = status.hasTestDetails;
+            changed = true;
+        }
+        if (mutable.bddHasRealContent !== status.bddHasRealContent) {
+            mutable.bddHasRealContent = status.bddHasRealContent;
+            changed = true;
+        }
+        if (mutable.testHasRealContent !== status.testHasRealContent) {
+            mutable.testHasRealContent = status.testHasRealContent;
+            changed = true;
+        }
+
+        if (changed) {
+            this.nodeManager.updateNode(node);
+            logCanvas(`[FileStatus] ${node.id}: hasBddSpec=${status.hasBddSpec}, hasTestDetails=${status.hasTestDetails}, bddHasRealContent=${status.bddHasRealContent}, testHasRealContent=${status.testHasRealContent}`);
+        }
+
+        return changed;
     }
 
     /**
@@ -81,25 +115,23 @@ export class TestWorkflowHandlers {
      */
     async handleCheckAllNodesFileStatus(): Promise<void> {
         try {
-            const allNodes = this.nodeManager.getAllNodes();
+            const allNodes = this.nodeManager.getNodes();
             const workspaceRoot = this.storage.getWorkspaceRoot();
-            const scaffoldingService = new ScaffoldingService();
-
-            const fileStatusMap: Record<string, { hasBddSpec: boolean; hasTestDetails: boolean; bddHasRealContent: boolean; testHasRealContent: boolean }> = {};
+            let updatedCount = 0;
 
             for (const node of allNodes) {
                 if (node.nodeType === 'folder') {continue;}
 
-                const { basePath, fileName } = this.getNodeFilePaths(node);
-                const status = scaffoldingService.checkNodeFileStatus(workspaceRoot, basePath, fileName);
-                fileStatusMap[node.id] = status;
+                const status = resolveNodeFileStatus(workspaceRoot, node);
+                if (this.applyFileStatusToNode(node, status)) {
+                    updatedCount++;
+                }
             }
 
-            this.webview.postMessage({
-                command: 'allNodesFileStatusLoaded',
-                fileStatusMap
-            });
-            logger.debug('CANVAS', `Checked file status for ${Object.keys(fileStatusMap).length} nodes`);
+            if (updatedCount > 0) {
+                this.nodeManager.saveNow();
+            }
+            logger.debug('CANVAS', `Checked file status for current folder: ${allNodes.length} nodes (${updatedCount} updated)`);
         } catch (error) {
             logError('CANVAS', 'Failed to check all nodes file status', error);
         }
@@ -114,16 +146,13 @@ export class TestWorkflowHandlers {
             if (!node || node.nodeType === 'folder') {return;}
 
             const workspaceRoot = this.storage.getWorkspaceRoot();
-            const scaffoldingService = new ScaffoldingService();
+            const status = resolveNodeFileStatus(workspaceRoot, node);
 
-            const { basePath, fileName } = this.getNodeFilePaths(node);
-            const status = scaffoldingService.checkNodeFileStatus(workspaceRoot, basePath, fileName);
-
-            this.webview.postMessage({
-                command: 'allNodesFileStatusLoaded',
-                fileStatusMap: { [nodeId]: status }
-            });
-            logger.debug('CANVAS', `Checked file status for node: ${node.title}`);
+            const updated = this.applyFileStatusToNode(node, status);
+            if (updated) {
+                this.nodeManager.saveNow();
+            }
+            logger.debug('CANVAS', `Checked file status for node: ${node.title}${updated ? ' (updated)' : ''}`);
         } catch (error) {
             logError('CANVAS', 'Failed to check single node file status', error);
         }
@@ -205,11 +234,11 @@ export class TestWorkflowHandlers {
         return this.nodeAutomationHandlers.handleStopSingleNodeAutomation();
     }
 
-    async handleSingleNodeAgentDone(): Promise<void> {
+    async handleSingleNodeAgentDone(): Promise<boolean> {
         return this.nodeAutomationHandlers.handleSingleNodeAgentDone();
     }
 
-    async handlePerNodeAgentDone(nodeId: string): Promise<void> {
+    async handlePerNodeAgentDone(nodeId: string): Promise<boolean> {
         return this.nodeAutomationHandlers.handlePerNodeAgentDone(nodeId);
     }
 

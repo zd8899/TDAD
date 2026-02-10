@@ -367,10 +367,26 @@ export function useNodeActions(
                     setIsRunningAutomation(false);
                     setAutomationPhase(null);
                     if (message.nodeId === node?.id && onNotification) {
+                        const completionKind = message.completionKind as 'bdd' | 'test' | 'run-fix' | undefined;
+                        const testsExecuted = message.testsExecuted === true;
+
+                        let title = 'Automation complete';
+                        let type: 'success' | 'warning' = message.passed ? 'success' : 'warning';
+
+                        if (!testsExecuted) {
+                            if (completionKind === 'bdd') {
+                                title = message.passed ? 'Automation complete - Plan generated!' : 'Automation complete - Plan generation failed';
+                            } else {
+                                title = message.passed ? 'Automation complete - Tests generated!' : 'Automation complete - Test generation failed';
+                            }
+                        } else {
+                            title = message.passed ? 'Automation complete - All tests passed!' : 'Automation complete - Tests failed';
+                        }
+
                         onNotification(
-                            message.passed ? 'Automation complete - All tests passed!' : 'Automation complete - Tests failed',
+                            title,
                             undefined,
-                            message.passed ? 'success' : 'warning'
+                            type
                         );
                     }
                     break;

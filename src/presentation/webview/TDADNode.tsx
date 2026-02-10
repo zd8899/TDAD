@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
 import { Node } from '../../shared/types';
+import { isPersistedNodeStatus } from '../../shared/utils/nodeStatusContract';
 import '../../styles/tdad-node.css';
 
 interface TDADNodeData {
@@ -9,18 +10,16 @@ interface TDADNodeData {
   onSelect?: (nodeId: string) => void;
   onEditDescription?: (node: Node) => void;
   edges?: Array<{ id: string; source: string; target: string }>;
-  isWorking?: boolean;
   hasBddSpec?: boolean;
   hasTestDetails?: boolean;
   bddHasRealContent?: boolean;
   testHasRealContent?: boolean;
-  automationPhase?: 'bdd' | 'tests' | 'run' | 'fix' | null;
 }
 
 const TDADNode: React.FC<NodeProps<TDADNodeData>> = ({ data, selected }) => {
   const {
-    node, onSelect, onEditDescription, onDelete, edges = [], isWorking,
-    hasBddSpec, hasTestDetails, bddHasRealContent, testHasRealContent, automationPhase
+    node, onSelect, onEditDescription, onDelete, edges = [],
+    hasBddSpec, hasTestDetails, bddHasRealContent, testHasRealContent
   } = data;
   const [isHovered, setIsHovered] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -64,8 +63,6 @@ const TDADNode: React.FC<NodeProps<TDADNodeData>> = ({ data, selected }) => {
     if (node.status === 'passed') {return 'green';}
     // Red: Tests failed
     if (node.status === 'failed') {return 'red';}
-    // Orange: Currently testing
-    if (node.status === 'testing') {return 'orange';}
     // Grey: Not run yet
     return 'grey';
   };
@@ -81,11 +78,9 @@ const TDADNode: React.FC<NodeProps<TDADNodeData>> = ({ data, selected }) => {
     red: '#f87171'
   };
 
-  // Determine if node should have working animation
-  const isNodeWorking = isWorking || node.status === 'testing' || node.status === 'generating';
   const isBddWorking = bddState === 'orange';
   const isTestGenWorking = testGenState === 'orange';
-  const isTestFixWorking = testFixState === 'orange';
+  const isTestFixWorking = false;
 
   // Handle node selection
   const handleNodeClick = (e: React.MouseEvent) => {
@@ -128,16 +123,15 @@ const TDADNode: React.FC<NodeProps<TDADNodeData>> = ({ data, selected }) => {
   const getStatusText = (status?: string) => {
     switch (status) {
       case 'pending': return 'Pending';
-      case 'spec-saved': return 'Spec Saved';
-      case 'ready-to-test': return 'Ready to Test';
-      case 'tests-ready': return 'Tests Ready';
-      case 'generating': return 'Generating Code...';
-      case 'testing': return 'Running Tests...';
+      case 'planned': return 'Planned';
+      case 'ready-for-implementation': return 'Ready for Implementation';
       case 'passed': return 'Tests Passed';
       case 'failed': return 'Tests Failed';
       default: return 'Pending';
     }
   };
+
+  const isStableStatus = (status?: string) => isPersistedNodeStatus(status);
 
   const getNodeClassName = () => {
     const classes = ['tdad-node'];
@@ -150,7 +144,7 @@ const TDADNode: React.FC<NodeProps<TDADNodeData>> = ({ data, selected }) => {
       classes.push('tdad-node--ghost');
     }
 
-    if (node.status) {
+    if (isStableStatus(node.status)) {
       classes.push(`tdad-node--${node.status}`);
     } else {
       classes.push('tdad-node--default');
@@ -160,7 +154,9 @@ const TDADNode: React.FC<NodeProps<TDADNodeData>> = ({ data, selected }) => {
   };
 
   const getStatusClassName = () => {
-    const statusClass = node.status ? `tdad-node__status-badge--${node.status}` : 'tdad-node__status-badge--default';
+    const statusClass = isStableStatus(node.status)
+      ? `tdad-node__status-badge--${node.status}`
+      : 'tdad-node__status-badge--default';
     return `tdad-node__status-badge ${statusClass}`;
   };
 

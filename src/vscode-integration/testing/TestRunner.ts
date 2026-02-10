@@ -13,7 +13,6 @@ import { ITestRunner, TestRunOptions } from '../../core/testing/ITestRunner';
 import { FileNameGenerator } from '../../shared/utils/fileNameGenerator';
 import { ScaffoldingService } from '../../core/workflows/ScaffoldingService';
 import { assignTestIdsToFile } from '../../shared/utils/idGenerator';
-import { FileLock } from '../../shared/utils/FileLock';
 import stripAnsi from 'strip-ansi';
 
 export interface TestExecutionResult {
@@ -35,8 +34,8 @@ export class TestRunner implements ITestRunner {
     static sequentialMode = false;
     private static testQueue: Promise<void> = Promise.resolve();
 
-    /** Cross-process file lock for test execution (ensures only one Playwright process runs at a time) */
-    private static testLock: FileLock | null = null;
+    /** Monotonic cancellation token; incrementing cancels queued/in-flight runs with older tokens */
+    private static cancellationVersion = 0;
 
     constructor() {
         this.outputChannel = vscode.window.createOutputChannel('TDAD Tests');
@@ -46,36 +45,42 @@ export class TestRunner implements ITestRunner {
     }
 
     async runNodeTests(node: Node, generatedCode: string, options?: TestRunOptions): Promise<TestResult[]> {
+        const runToken = TestRunner.cancellationVersion;
         if (TestRunner.sequentialMode) {
-            return this.runNodeTestsQueued(node, generatedCode, options);
+            return this.runNodeTestsQueued(node, generatedCode, options, runToken);
         }
-        return this.runNodeTestsInternal(node, generatedCode, options);
+        return this.runNodeTestsInternal(node, generatedCode, options, runToken);
     }
 
-    private runNodeTestsQueued(node: Node, generatedCode: string, options?: TestRunOptions): Promise<TestResult[]> {
+    private runNodeTestsQueued(node: Node, generatedCode: string, options: TestRunOptions | undefined, runToken: number): Promise<TestResult[]> {
         let resolve: (results: TestResult[]) => void;
         const resultPromise = new Promise<TestResult[]>(r => { resolve = r; });
 
-        TestRunner.testQueue = TestRunner.testQueue.then(async () => {
-            const results = await this.runNodeTestsInternal(node, generatedCode, options);
-            resolve!(results);
-        });
+        // Keep queue alive even if a prior queued run failed.
+        TestRunner.testQueue = TestRunner.testQueue
+            .catch(error => {
+                logError('TEST-RUNNER', 'Recovered queued test chain after failure', error);
+            })
+            .then(async () => {
+                if (this.isCancellationRequested(runToken)) {
+                    this.outputChannel.appendLine('Cancelled queued test before start.');
+                    resolve!([]);
+                    return;
+                }
+
+                try {
+                    const results = await this.runNodeTestsInternal(node, generatedCode, options, runToken);
+                    resolve!(results);
+                } catch (error) {
+                    logError('TEST-RUNNER', 'Queued test execution failed', error);
+                    resolve!([]);
+                }
+            });
 
         return resultPromise;
     }
 
-    /**
-     * Get or create cross-process file lock for test execution
-     */
-    private static getTestLock(workspacePath: string): FileLock {
-        if (!TestRunner.testLock) {
-            const lockFilePath = path.join(workspacePath, '.tdad', '.test-lock');
-            TestRunner.testLock = new FileLock(lockFilePath);
-        }
-        return TestRunner.testLock;
-    }
-
-    private async runNodeTestsInternal(node: Node, generatedCode: string, options?: TestRunOptions): Promise<TestResult[]> {
+    private async runNodeTestsInternal(node: Node, generatedCode: string, options: TestRunOptions | undefined, runToken: number): Promise<TestResult[]> {
         const startTime = Date.now();
         const opts: TestRunOptions = {
             timeout: options?.timeout || this.defaultTimeout,
@@ -83,60 +88,56 @@ export class TestRunner implements ITestRunner {
             silent: options?.silent || false
         };
 
+        if (this.isCancellationRequested(runToken)) {
+            return [];
+        }
+
         if (!opts.silent) {
             this.outputChannel.clear();
             this.outputChannel.show();
         }
 
-        // Acquire cross-process lock to ensure only one test runs at a time
-        // This prevents conflicts when multiple Claude Code processes run tests concurrently
-        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-        if (!workspaceFolder) {
-            throw new Error('No workspace folder found');
+        if (this.isCancellationRequested(runToken)) {
+            this.outputChannel.appendLine('Test run cancelled before execution started.');
+            return [];
         }
 
-        const lock = TestRunner.getTestLock(workspaceFolder.uri.fsPath);
-        const lockAcquired = await lock.acquire(1200000); // 20 minute timeout
+        this.outputChannel.appendLine(`${'='.repeat(60)}`);
+        this.outputChannel.appendLine(`Running tests for node: ${node.title}`);
+        this.outputChannel.appendLine(`Timeout: ${opts.timeout}ms | Framework: Playwright`);
+        this.outputChannel.appendLine(`${'='.repeat(60)}\n`);
 
-        if (!lockAcquired) {
-            const error = 'Failed to acquire test lock (another test process is running)';
-            this.outputChannel.appendLine(`❌ ${error}`);
-            throw new Error(error);
-        }
+        // Look for automated test file (should exist if code was generated properly)
+        const automatedTestFilePath = await this.findAutomatedTestFile(node);
 
-        try {
-            this.outputChannel.appendLine(`${'='.repeat(60)}`);
-            this.outputChannel.appendLine(`Running tests for node: ${node.title}`);
-            this.outputChannel.appendLine(`Timeout: ${opts.timeout}ms | Framework: Playwright`);
-            this.outputChannel.appendLine(`${'='.repeat(60)}\n`);
+        let results: TestResult[];
 
-            // Look for automated test file (should exist if code was generated properly)
-            const automatedTestFilePath = await this.findAutomatedTestFile(node);
+        if (automatedTestFilePath) {
+            this.outputChannel.appendLine(`📁 Test file: ${automatedTestFilePath}\n`);
 
-            let results: TestResult[];
+            try {
+                const executionResult = await this.runTests(automatedTestFilePath, node, opts, runToken);
+                results = executionResult.results;
 
-            if (automatedTestFilePath) {
-                this.outputChannel.appendLine(`📁 Test file: ${automatedTestFilePath}\n`);
+                // Log detailed execution info
+                this.outputChannel.appendLine(`\n${'─'.repeat(60)}`);
+                this.outputChannel.appendLine(`⏱️  Duration: ${executionResult.duration}ms`);
+                this.outputChannel.appendLine(`🔢 Exit code: ${executionResult.exitCode}`);
 
-                try {
-                    const executionResult = await this.runTests(automatedTestFilePath, node, opts);
-                    results = executionResult.results;
+                if (executionResult.timedOut) {
+                    this.outputChannel.appendLine(`⚠️  WARNING: Tests timed out after ${opts.timeout}ms`);
+                    vscode.window.showWarningMessage(`Tests timed out for "${node.title}" after ${opts.timeout}ms`);
+                }
 
-                    // Log detailed execution info
-                    this.outputChannel.appendLine(`\n${'─'.repeat(60)}`);
-                    this.outputChannel.appendLine(`⏱️  Duration: ${executionResult.duration}ms`);
-                    this.outputChannel.appendLine(`🔢 Exit code: ${executionResult.exitCode}`);
+                if (executionResult.stderr) {
+                    this.outputChannel.appendLine(`\n❌ STDERR:\n${executionResult.stderr}`);
+                }
 
-                    if (executionResult.timedOut) {
-                        this.outputChannel.appendLine(`⚠️  WARNING: Tests timed out after ${opts.timeout}ms`);
-                        vscode.window.showWarningMessage(`Tests timed out for "${node.title}" after ${opts.timeout}ms`);
-                    }
-
-                    if (executionResult.stderr) {
-                        this.outputChannel.appendLine(`\n❌ STDERR:\n${executionResult.stderr}`);
-                    }
-
-                } catch (error) {
+            } catch (error) {
+                if (this.isCancellationRequested(runToken)) {
+                    this.outputChannel.appendLine('\nTest run cancelled during execution.');
+                    results = [];
+                } else {
                     this.outputChannel.appendLine(`\n❌ Test execution error: ${error instanceof Error ? error.message : String(error)}`);
                     logError('TEST-RUNNER', 'Test execution failed', error);
 
@@ -152,37 +153,39 @@ export class TestRunner implements ITestRunner {
                         }
                     }
                 }
-            } else {
-                this.outputChannel.appendLine(`❌ No automated test file found. Generate code first to create automated tests.`);
-                results = [];
+            }
+        } else {
+            this.outputChannel.appendLine(`❌ No automated test file found. Generate code first to create automated tests.`);
+            results = [];
+            if (!this.isCancellationRequested(runToken)) {
                 vscode.window.showWarningMessage('No automated tests found. Please generate code first to create automated test files.');
             }
-
-            // Display summary
-            const passedCount = results.filter(r => r.passed).length;
-            const totalCount = results.length;
-            const passRate = totalCount > 0 ? (passedCount / totalCount * 100).toFixed(1) : '0';
-            const duration = Date.now() - startTime;
-
-            this.outputChannel.appendLine(`\n${'='.repeat(60)}`);
-            this.outputChannel.appendLine(`📊 SUMMARY:`);
-            this.outputChannel.appendLine(`   ${passedCount}/${totalCount} tests passed (${passRate}%)`);
-            this.outputChannel.appendLine(`   Total duration: ${duration}ms`);
-            this.outputChannel.appendLine(`${'='.repeat(60)}`);
-
-            logTestRunner('Test execution completed', {
-                nodeId: node.id,
-                nodeTitle: node.title,
-                passed: passedCount,
-                total: totalCount,
-                duration
-            });
-
-            return results;
-        } finally {
-            // Always release lock, even if test execution fails
-            lock.release();
         }
+
+        // Display summary
+        const passedCount = results.filter(r => r.passed).length;
+        const totalCount = results.length;
+        const passRate = totalCount > 0 ? (passedCount / totalCount * 100).toFixed(1) : '0';
+        const duration = Date.now() - startTime;
+        if (this.isCancellationRequested(runToken)) {
+            return [];
+        }
+
+        this.outputChannel.appendLine(`\n${'='.repeat(60)}`);
+        this.outputChannel.appendLine(`📊 SUMMARY:`);
+        this.outputChannel.appendLine(`   ${passedCount}/${totalCount} tests passed (${passRate}%)`);
+        this.outputChannel.appendLine(`   Total duration: ${duration}ms`);
+        this.outputChannel.appendLine(`${'='.repeat(60)}`);
+
+        logTestRunner('Test execution completed', {
+            nodeId: node.id,
+            nodeTitle: node.title,
+            passed: passedCount,
+            total: totalCount,
+            duration
+        });
+
+        return results;
     }
 
 
@@ -218,7 +221,7 @@ export class TestRunner implements ITestRunner {
     /**
      * Run tests using Playwright
      */
-    private async runTests(testFilePath: string, node: Node, options: TestRunOptions): Promise<TestExecutionResult> {
+    private async runTests(testFilePath: string, node: Node, options: TestRunOptions, runToken: number): Promise<TestExecutionResult> {
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
         if (!workspaceFolder) {
             throw new Error('No workspace folder found');
@@ -227,14 +230,18 @@ export class TestRunner implements ITestRunner {
         const workspacePath = workspaceFolder.uri.fsPath;
         this.outputChannel.appendLine(`🔧 Using test framework: playwright\n`);
 
-        return await this.runPlaywrightTests(testFilePath, node, workspacePath, options.timeout!);
+        return await this.runPlaywrightTests(testFilePath, node, workspacePath, options.timeout!, runToken);
     }
 
     /**
      * Run Playwright tests with enhanced error reporting
      */
-    private async runPlaywrightTests(testFilePath: string, node: Node, workspacePath: string, timeout: number): Promise<TestExecutionResult> {
+    private async runPlaywrightTests(testFilePath: string, node: Node, workspacePath: string, timeout: number, runToken: number): Promise<TestExecutionResult> {
         const startTime = Date.now();
+
+        if (this.isCancellationRequested(runToken)) {
+            return this.createCanceledExecutionResult(Date.now() - startTime);
+        }
 
         // Build diagnostic log for inclusion in error results
         // This captures all diagnostic output so AI can see full context on failures
@@ -249,16 +256,39 @@ export class TestRunner implements ITestRunner {
             // This regenerates tdad-fixtures.js with latest screenshot/trace path logic
             const scaffoldingService = new ScaffoldingService();
             scaffoldingService.ensureFixturesFile(workspacePath);
+            // Ensure Playwright global lock hook exists.
+            scaffoldingService.ensurePlaywrightGlobalLockFile(workspacePath);
 
             // Ensure TDAD playwright config exists before running tests
-            // This creates .tdad/playwright.config.js if missing (avoids conflicts with user's config)
+            // Also backfills lock-enabled config for older workspaces.
             const tdadConfigFile = path.join(workspacePath, '.tdad', 'playwright.config.js');
+            const config = vscode.workspace.getConfiguration('tdad');
+            // Fallback to 5173 only if no URLs configured (for generated projects, .vscode/settings.json should have correct ports)
+            const urls = config.get<Record<string, string>>('test.urls', { ui: 'http://localhost:5173' });
+            const workers = config.get<number>('test.workers', 1);
+
+            let shouldRegenerateConfig = false;
+            let configReason = 'missing';
             if (!fs.existsSync(tdadConfigFile)) {
-                const config = vscode.workspace.getConfiguration('tdad');
-                // Fallback to 5173 only if no URLs configured (for generated projects, .vscode/settings.json should have correct ports)
-                const urls = config.get<Record<string, string>>('test.urls', { ui: 'http://localhost:5173' });
-                scaffoldingService.scaffoldPlaywrightConfig(workspacePath, urls);
-                logDiagnostic(`📝 Created .tdad/playwright.config.js`);
+                shouldRegenerateConfig = true;
+                configReason = 'missing';
+            } else {
+                try {
+                    const currentConfig = fs.readFileSync(tdadConfigFile, 'utf-8');
+                    if (!currentConfig.includes('playwright-global-lock.cjs') || !currentConfig.includes('globalSetup')) {
+                        shouldRegenerateConfig = true;
+                        configReason = 'lock-hook-migration';
+                    }
+                } catch {
+                    shouldRegenerateConfig = true;
+                    configReason = 'read-failed';
+                }
+            }
+
+            if (shouldRegenerateConfig) {
+                scaffoldingService.scaffoldPlaywrightConfig(workspacePath, urls, workers);
+                const verb = configReason === 'missing' ? 'Created' : `Regenerated (${configReason})`;
+                logDiagnostic(`📝 ${verb} .tdad/playwright.config.js`);
             }
 
             // Auto-assign test IDs before running (assigns [UI-XXX] or [API-XXX] to tests without IDs)
@@ -336,6 +366,10 @@ export class TestRunner implements ITestRunner {
             logDiagnostic(`🔍 TDAD config: ${tdadConfigPath}`);
 
             const execResult = await this.executeCommandWithTimeout(command, workspacePath, timeout);
+
+            if (this.isCancellationRequested(runToken)) {
+                return this.createCanceledExecutionResult(Date.now() - startTime);
+            }
 
             logDiagnostic(`\n📤 STDOUT length: ${execResult.stdout.length} bytes`);
             logDiagnostic(`📤 STDERR length: ${execResult.stderr.length} bytes`);
@@ -685,6 +719,10 @@ export class TestRunner implements ITestRunner {
                 }
             }
 
+            if (this.isCancellationRequested(runToken)) {
+                return this.createCanceledExecutionResult(Date.now() - startTime);
+            }
+
             // Parse coverage report (Dynamic Context - Layer 1)
             // Sprint 5: Enhanced coverage with source files + API requests
             // Note: For browser tests, coverage must be collected via Playwright's Coverage API
@@ -727,6 +765,9 @@ export class TestRunner implements ITestRunner {
             };
         } catch (error) {
             const duration = Date.now() - startTime;
+            if (this.isCancellationRequested(runToken)) {
+                return this.createCanceledExecutionResult(duration);
+            }
             this.outputChannel.appendLine(`\n❌ Playwright execution failed: ${error}`);
 
             // Fallback: return failed results for all tests
@@ -882,6 +923,21 @@ export class TestRunner implements ITestRunner {
         });
     }
 
+    private isCancellationRequested(runToken: number): boolean {
+        return runToken !== TestRunner.cancellationVersion;
+    }
+
+    private createCanceledExecutionResult(duration: number): TestExecutionResult {
+        return {
+            results: [],
+            duration,
+            stdout: '',
+            stderr: '',
+            exitCode: null,
+            timedOut: false
+        };
+    }
+
     /**
      * Parse coverage and attach to test results
      * Sprint 5: Extracted to prevent duplicate code (CLAUDE.md ALWAYS Rule 1)
@@ -923,10 +979,14 @@ export class TestRunner implements ITestRunner {
      * Cancel currently running test process
      */
     public cancelCurrentTest(): void {
+        TestRunner.cancellationVersion += 1;
+
         if (this.currentProcess) {
             this.outputChannel.appendLine('\n🛑 Canceling test execution...');
             this.currentProcess.kill('SIGTERM');
             this.currentProcess = null;
+        } else {
+            this.outputChannel.appendLine('\nCancel requested for queued/waiting test executions.');
         }
     }
 

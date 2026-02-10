@@ -415,7 +415,6 @@ export class AgentOrchestrator {
     private async handleTestsFailed(node: Node, results: TestResult[], allNodes: Node[], allEdges: any[]): Promise<void> {
         logger.log('AGENT-ORCHESTRATOR', `Tests failed for: ${node.title} (retry ${this.state.currentRetry + 1}/${this.maxRetries})`);
 
-        (node as any).status = 'failed';
         this.nodeProcessor.recordFixAttempt(this.state, this.lastAgentResponse);
 
         if (this.nodeProcessor.isMaxRetriesExceeded(this.state.currentRetry)) {

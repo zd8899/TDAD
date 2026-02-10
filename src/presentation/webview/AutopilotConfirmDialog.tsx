@@ -198,26 +198,26 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
                 className="autopilot-retries-input"
               />
             </label>
-            {concurrency > 1 && (
-              <>
-                <label className="autopilot-skip-permissions-label" style={{ marginTop: '6px' }}>
-                  <input
-                    type="checkbox"
-                    checked={waitForDependencies}
-                    onChange={(e) => setWaitForDependencies(e.target.checked)}
-                  />
-                  <span>Wait for dependencies</span>
-                </label>
-                <label className="autopilot-skip-permissions-label" style={{ marginTop: '6px' }}>
-                  <input
-                    type="checkbox"
-                    checked={sequentialTests}
-                    onChange={(e) => setSequentialTests(e.target.checked)}
-                  />
-                  <span>Sequential test execution</span>
-                </label>
-              </>
-            )}
+            <div className={`autopilot-concurrency-options ${concurrency > 1 ? 'autopilot-concurrency-options--visible' : ''}`}>
+              <label className="autopilot-skip-permissions-label autopilot-concurrency-option">
+                <input
+                  type="checkbox"
+                  checked={waitForDependencies}
+                  disabled={concurrency <= 1}
+                  onChange={(e) => setWaitForDependencies(e.target.checked)}
+                />
+                <span>Wait for dependencies</span>
+              </label>
+              <label className="autopilot-skip-permissions-label autopilot-concurrency-option">
+                <input
+                  type="checkbox"
+                  checked={sequentialTests}
+                  disabled={concurrency <= 1}
+                  onChange={(e) => setSequentialTests(e.target.checked)}
+                />
+                <span>Sequential test execution</span>
+              </label>
+            </div>
           </div>
         )}
 

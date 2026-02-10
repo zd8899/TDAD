@@ -129,7 +129,6 @@ export class AgentNodeProcessor {
     ): void {
         logger.log('AGENT-ORCHESTRATOR', `Tests passed for: ${node.title}`);
 
-        (node as any).status = 'passed';
         state.processedNodes.push(node.id);
         state.fixAttempts = [];
 

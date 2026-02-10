@@ -243,6 +243,27 @@
   flex-direction: column;
 }
 
+.autopilot-concurrency-options {
+  min-height: 76px;
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.autopilot-concurrency-options--visible {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.autopilot-concurrency-option {
+  margin-top: 0 !important;
+}
+
 .autopilot-retries-label {
   display: flex;
   align-items: center;

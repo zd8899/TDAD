@@ -6,11 +6,12 @@
  */
 
 import * as vscode from 'vscode';
-import { Node, TestResult } from '../../../shared/types';
+import { Node, NodeStatus, TestResult } from '../../../shared/types';
 import { isFolderNode } from '../../../shared/types/typeGuards';
 import { logCanvas, logError } from '../../../shared/utils/Logger';
 import { FeatureMapStorage } from '../../../infrastructure/storage/FeatureMapStorage';
 import { SimpleNodeManager } from '../SimpleNodeManager';
+import { NodeStatusService } from '../NodeStatusService';
 import { TestRunner } from '../../testing/TestRunner';
 import { AgentOrchestrator, OrchestratorState } from '../../../core/services/AgentOrchestrator';
 import { CLIAgentLauncher } from '../../CLIAgentLauncher';
@@ -21,6 +22,8 @@ const AUTOMATION_STARTED_MSG = '🤖 Automation started! AI agent will be trigge
 export class AutomationHandlers {
     private _agentOrchestrator: AgentOrchestrator | null = null;
     private _promptService: PromptService | null = null;
+    private readonly nodeStatusService: NodeStatusService;
+    private readonly nodeStatusSnapshot: Map<string, NodeStatus | undefined> = new Map();
 
     constructor(
         private readonly webview: vscode.Webview,
@@ -29,7 +32,42 @@ export class AutomationHandlers {
         private readonly testRunner: TestRunner,
         private readonly testResultsCache: Map<string, TestResult[]>,
         private readonly extensionUri: vscode.Uri
-    ) {}
+    ) {
+        this.nodeStatusService = new NodeStatusService(nodeManager);
+    }
+
+    private rememberNodeStatus(nodeId: string): void {
+        if (this.nodeStatusSnapshot.has(nodeId)) {
+            return;
+        }
+        const node = this.nodeManager.getNodeById(nodeId);
+        this.nodeStatusSnapshot.set(nodeId, (node as any)?.status as NodeStatus | undefined);
+    }
+
+    private forgetNodeStatus(nodeId: string): void {
+        this.nodeStatusSnapshot.delete(nodeId);
+    }
+
+    private restoreAllSnapshotStatuses(reason: string, preserveFailed = false): void {
+        for (const [nodeId, status] of this.nodeStatusSnapshot) {
+            if (status) {
+                if (preserveFailed) {
+                    const currentNode = this.nodeManager.getNodeById(nodeId);
+                    const currentStatus = (currentNode as any)?.status as NodeStatus | undefined;
+                    if (currentStatus === 'failed') {
+                        logCanvas(`[NodeStatus] ${nodeId}: preserving failed status during restore (${reason})`);
+                        continue;
+                    }
+                }
+                this.nodeStatusService.setStatusById(nodeId, status, {
+                    saveNow: true,
+                    force: true,
+                    reason
+                });
+            }
+        }
+        this.nodeStatusSnapshot.clear();
+    }
 
     /**
      * Initialize the Agent Orchestrator
@@ -45,6 +83,11 @@ export class AutomationHandlers {
             // Set up callbacks
             this._agentOrchestrator.setCallbacks({
                 onStatusChange: (state: OrchestratorState) => {
+                    if (state.currentNodeId) {
+                        this.rememberNodeStatus(state.currentNodeId);
+                        logCanvas(`[NodeRuntime] ${state.currentNodeId} phase=${state.phase}, status=${state.status} (runtime only, not persisted)`);
+                    }
+
                     this.webview.postMessage({
                         command: 'automationStatusUpdate',
                         state
@@ -55,11 +98,12 @@ export class AutomationHandlers {
                     const nodes = this.nodeManager.getNodes();
                     const node = nodes.find(n => n.id === nodeId);
                     if (node) {
-                        (node as any).status = passed ? 'passed' : 'failed';
-                        this.nodeManager.updateNode(node);
-                        // BUG FIX: Save immediately to prevent race condition with canvas refresh
-                        this.nodeManager.saveNow();
+                        this.nodeStatusService.setStatusByNode(node, passed ? 'passed' : 'failed', {
+                            saveNow: true,
+                            reason: 'legacy orchestrator onNodeComplete'
+                        });
                     }
+                    this.forgetNodeStatus(nodeId);
 
                     this.webview.postMessage({
                         command: 'nodeAutomationComplete',
@@ -69,13 +113,16 @@ export class AutomationHandlers {
                 },
                 onTestResults: (nodeId: string, results: TestResult[]) => {
                     this.testResultsCache.set(nodeId, results);
+                    const passed = results.length > 0 && results.every(r => r.passed);
                     this.webview.postMessage({
                         command: 'testResultsUpdated',
                         nodeId,
-                        results
+                        testResults: results,
+                        passed
                     });
                 },
                 onError: (error: Error) => {
+                    this.restoreAllSnapshotStatuses('legacy orchestrator error restore', true);
                     vscode.window.showErrorMessage(`Automation error: ${error.message}`);
                 },
                 onBlueprintComplete: async () => {
@@ -191,6 +238,7 @@ export class AutomationHandlers {
     handleStopAutomation(): void {
         if (this._agentOrchestrator) {
             this._agentOrchestrator.stop();
+            this.restoreAllSnapshotStatuses('legacy orchestrator stop restore', true);
             vscode.window.showInformationMessage('⏸️ Automation paused');
         }
     }

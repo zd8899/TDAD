@@ -24,6 +24,14 @@ export type NodeType = 'folder' | 'feature' | 'function';
 // Test execution status
 export type TestStatus = 'passed' | 'failed' | 'pending' | 'not_tested';
 
+// Canonical canvas node status (persisted in workflow JSON)
+export type NodeStatus =
+    | 'pending'
+    | 'planned'
+    | 'ready-for-implementation'
+    | 'passed'
+    | 'failed';
+
 // Base Node interface (shared fields for all node types)
 export interface BaseNode {
     id: string;
@@ -65,7 +73,7 @@ export interface FeatureNode extends BaseNode {
     preConditions: string[];
     features: Feature[]; // File-level features with tests
     testData: any;
-    status?: 'pending' | 'tests-ready' | 'generating' | 'testing' | 'passed' | 'failed';
+    status?: NodeStatus;
 
     // File status fields (single source of truth for UI progress bars)
     hasBddSpec?: boolean;           // BDD file exists

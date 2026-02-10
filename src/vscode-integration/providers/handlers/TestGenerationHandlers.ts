@@ -15,6 +15,7 @@ import { getWorkflowFolderName } from '../../../shared/utils/stringUtils';
 import { getNodeBasePath, getFeatureFilePath, getTestFilePath, getActionFilePath, getAbsolutePath } from '../../../shared/utils/nodePathUtils';
 import { FeatureMapStorage } from '../../../infrastructure/storage/FeatureMapStorage';
 import { SimpleNodeManager } from '../SimpleNodeManager';
+import { NodeStatusService } from '../NodeStatusService';
 import { TestFileParser } from '../../../core/testing/TestFileParser';
 import { ScaffoldingService, DependencyWiring } from '../../../core/workflows/ScaffoldingService';
 import { PromptGenerationService } from '../../../core/services/PromptGenerationService';
@@ -23,7 +24,8 @@ export class TestGenerationHandlers {
     constructor(
         private readonly webview: vscode.Webview,
         private readonly storage: FeatureMapStorage,
-        private readonly nodeManager: SimpleNodeManager
+        private readonly nodeManager: SimpleNodeManager,
+        private readonly nodeStatusService: NodeStatusService
     ) {}
 
     /**
@@ -221,13 +223,16 @@ export class TestGenerationHandlers {
 
             (node as any).testCodeFile = testFilePath;
             (node as any).actionFile = actionFilePath;
-            (node as any).status = 'ready-to-test';
-            // Update file status fields (single source of truth)
-            (node as any).hasTestDetails = testFileCreated;
-            (node as any).testHasRealContent = false; // Scaffold template, not real content yet
-            this.nodeManager.setNodes(
-                this.nodeManager.getNodes().map(n => n.id === nodeId ? node : n)
-            );
+            this.nodeStatusService.setStatusOnNode(node, 'ready-for-implementation');
+            // Update file status fields from disk (single source of truth)
+            // so existing files are not accidentally marked as missing.
+            const fileStatus = scaffoldingService.checkNodeFileStatus(workspaceRoot, basePath, fileName);
+            (node as any).hasBddSpec = fileStatus.hasBddSpec;
+            (node as any).hasTestDetails = fileStatus.hasTestDetails;
+            (node as any).bddHasRealContent = fileStatus.bddHasRealContent;
+            (node as any).testHasRealContent = fileStatus.testHasRealContent;
+            this.nodeManager.updateNode(node);
+            this.nodeManager.saveNow();
 
             const fullTestPath = path.join(workspaceRoot, testFilePath);
             let testCode = '';

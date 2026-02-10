@@ -132,6 +132,9 @@ export function createMessageHandler(
             case 'automationStatusUpdate':
                 handleAutomationStatusUpdate(message, state);
                 break;
+            case 'singleNodeAutomationStatus':
+                handleSingleNodeAutomationStatus(message, state);
+                break;
             case 'nodeAutomationComplete':
             case 'singleNodeAutomationComplete':
             case 'testResultsUpdated':
@@ -196,6 +199,33 @@ function handleNodeAddedOrUpdated(message: any, state: CanvasMessageState, deps:
     state.setNodes((nds: any[]) => {
         const idx = nds.findIndex((n: any) => n.id === message.node.id);
         const existingNode = nds.find((n: any) => n.id === message.node.id);
+        const currentFolderId = deps.handlersRef.current?.currentFolderId ?? null;
+        const nodeParentId = (message.node?.parentId ?? null) as string | null;
+        const isInCurrentContext = nodeParentId === currentFolderId || (currentFolderId !== null && nodeParentId === null);
+        sendVSCodeMessage({
+            command: 'canvasLog',
+            message: `[NodeUpdate] ${message.command} id=${message.node?.id} title="${message.node?.title}" parent=${nodeParentId ?? 'root'} currentFolder=${currentFolderId ?? 'root'} workflow=${message.node?.workflowId ?? 'unknown'} inContext=${isInCurrentContext} currentlyVisible=${idx !== -1}`
+        });
+
+        // Prevent cross-folder node updates from polluting the current canvas view.
+        // Keep updates only for nodes that are already visible or belong to current folder.
+        if (!isInCurrentContext && idx === -1) {
+            sendVSCodeMessage({
+                command: 'canvasLog',
+                message: `[NodeUpdate] ignored out-of-context node ${message.node?.id}`
+            });
+            return nds;
+        }
+
+        // If a currently visible node moved out of this folder, remove it from this view.
+        if (!isInCurrentContext && idx !== -1) {
+            sendVSCodeMessage({
+                command: 'canvasLog',
+                message: `[NodeUpdate] removed node ${message.node?.id} from current view (moved out of context)`
+            });
+            return nds.filter((n: any) => n.id !== message.node.id);
+        }
+
         if (existingNode?.selected) {rfNode.selected = true;}
         if (existingNode?.position) {rfNode.position = existingNode.position;}
         return idx === -1 ? [...nds, rfNode] : nds.map((n: any) => n.id === message.node.id ? rfNode : n);
@@ -203,6 +233,18 @@ function handleNodeAddedOrUpdated(message: any, state: CanvasMessageState, deps:
 
     state.setAllNodes((prevAllNodes: Node[]) => {
         const idx = prevAllNodes.findIndex((n: Node) => n.id === message.node.id);
+        const currentFolderId = deps.handlersRef.current?.currentFolderId ?? null;
+        const nodeParentId = (message.node?.parentId ?? null) as string | null;
+        const isInCurrentContext = nodeParentId === currentFolderId || (currentFolderId !== null && nodeParentId === null);
+
+        if (!isInCurrentContext && idx === -1 && message.node?.isGhost !== true) {
+            return prevAllNodes;
+        }
+
+        if (!isInCurrentContext && idx !== -1 && message.node?.isGhost !== true) {
+            return prevAllNodes.filter((n: Node) => n.id !== message.node.id);
+        }
+
         const existingAllNode = prevAllNodes.find((n: Node) => n.id === message.node.id);
         const nodeToStore = existingAllNode?.position
             ? { ...message.node, position: existingAllNode.position }
@@ -244,21 +286,22 @@ function handleAutomationStatusUpdate(message: any, state: CanvasMessageState) {
             state.setWorkingNodeId(null);
             state.setAutomationPhase(null);
         }
+    }
+}
 
-        if (message.state.phase) {
-            state.setAutomationPhase(message.state.phase);
-        } else if (message.state.message) {
-            const msg = message.state.message.toLowerCase();
-            if (msg.includes('bdd') || msg.includes('feature')) {
-                state.setAutomationPhase('bdd');
-            } else if (msg.includes('test') && !msg.includes('running')) {
-                state.setAutomationPhase('tests');
-            } else if (msg.includes('running') || msg.includes('executing')) {
-                state.setAutomationPhase('run');
-            } else if (msg.includes('fix')) {
-                state.setAutomationPhase('fix');
-            }
-        }
+function handleSingleNodeAutomationStatus(message: any, state: CanvasMessageState) {
+    if (!message.nodeId) {
+        return;
+    }
+
+    if (message.status === 'running') {
+        state.setWorkingNodeId(message.nodeId);
+        return;
+    }
+
+    if (['completed', 'failed', 'stopped', 'idle', 'error'].includes(message.status)) {
+        state.setWorkingNodeId(null);
+        state.setAutomationPhase(null);
     }
 }
 
@@ -267,31 +310,8 @@ function handleNodeAutomationComplete(message: any, state: CanvasMessageState) {
         state.setWorkingNodeId(null);
         state.setAutomationPhase(null);
     }
-
-    const newStatus = message.passed ? 'passed' : 'failed';
-
-    state.setNodes((nds: any[]) => nds.map((n: any) => {
-        if (n.id === message.nodeId) {
-            return {
-                ...n,
-                data: {
-                    ...n.data,
-                    node: {
-                        ...n.data.node,
-                        status: newStatus
-                    }
-                }
-            };
-        }
-        return n;
-    }));
-
-    state.setAllNodes((prevAllNodes: Node[]) => prevAllNodes.map((n: Node) => {
-        if (n.id === message.nodeId) {
-            return { ...n, status: newStatus };
-        }
-        return n;
-    }));
+    // Canvas node status must come only from backend node payloads
+    // (loadNodes / nodeUpdated), not from summary booleans in workflow events.
 }
 
 // REMOVED: File status is now stored directly in node fields (single source of truth)
