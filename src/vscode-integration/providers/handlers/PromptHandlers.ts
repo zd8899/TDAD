@@ -102,14 +102,16 @@ export class PromptHandlers {
                         diffPairs.push({ backupFile, currentFile, template });
                     }
                 }
-                // Open all diffs concurrently so they all appear as tabs
-                await Promise.all(diffPairs.map(({ backupFile, currentFile, template }) =>
-                    vscode.commands.executeCommand('vscode.diff',
+                // Open diffs sequentially in pinned tabs; preview tabs get replaced and only show one file.
+                for (const { backupFile, currentFile, template } of diffPairs) {
+                    await vscode.commands.executeCommand(
+                        'vscode.diff',
                         vscode.Uri.file(backupFile),
                         vscode.Uri.file(currentFile),
-                        `${template}: Your Old ↔ New (editable)`
-                    )
-                ));
+                        `${template}: Your Old <-> New (editable)`,
+                        { preview: false, preserveFocus: true }
+                    );
+                }
                 await promptService.markTemplatesAsApplied();
                 logCanvas(`Update & Review: ${updatedTemplates.length} templates with diff`);
                 this.webview.postMessage({ command: 'templateUpdatesApplied' });

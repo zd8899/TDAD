@@ -84,8 +84,8 @@ Feature: User Login
 - **Action:** 'When' steps must be USER ACTIONS (e.g., "When user visits the profile page").
 {{/if}}
 {{#if testSettings.hasUrls}}
-### Base URLs (Playwright Projects)
-URLs are configured in `playwright.config.js` as projects with `baseURL`. Tests use relative paths:
+### Base URLs (TDAD Playwright Config)
+TDAD writes baseURL settings to `.tdad/playwright.generated.js` and runs via `.tdad/playwright.config.js` (wrapper + user overrides in `.tdad/playwright.user.js`). Tests use relative paths:
 {{testSettings.urls}}
 {{/if}}
 {{/if}}

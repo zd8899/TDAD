@@ -114,19 +114,19 @@ export class SettingsHandlers {
             const workers = testSettings.workers ?? 1;
             await config.update('test.workers', workers, vscode.ConfigurationTarget.Workspace);
 
-            // Save URLs if provided and regenerate playwright.config.js
+            // Save URLs if provided.
             if (urls) {
                 await config.update('test.urls', urls, vscode.ConfigurationTarget.Workspace);
             }
 
-            // Regenerate .tdad/playwright.config.js with updated URLs and workers
+            // Regenerate TDAD Playwright config bundle with updated URLs and workers.
             const workspaceFolders = vscode.workspace.workspaceFolders;
             if (workspaceFolders && workspaceFolders.length > 0) {
                 const workspacePath = workspaceFolders[0].uri.fsPath;
                 const scaffoldingService = new ScaffoldingService();
                 const currentUrls = urls ?? config.get<Record<string, string>>('test.urls') ?? {};
                 scaffoldingService.scaffoldPlaywrightConfig(workspacePath, currentUrls, workers);
-                logCanvas(`.tdad/playwright.config.js regenerated with workers: ${workers}`);
+                logCanvas(`TDAD Playwright config bundle regenerated with workers: ${workers}`);
             }
 
             logCanvas('Test settings updated');

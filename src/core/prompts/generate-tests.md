@@ -32,8 +32,8 @@
 - **Target Layer:** {{testSettings.layer}}
 
 {{#if testSettings.hasUrls}}
-### Base URLs (Playwright Projects)
-URLs are configured in `playwright.config.js` via projects. Use **relative URLs** in your tests:
+### Base URLs (TDAD Playwright Config)
+TDAD writes baseURL settings to `.tdad/playwright.generated.js` and runs via `.tdad/playwright.config.js` (wrapper + user overrides in `.tdad/playwright.user.js`). Use **relative URLs** in your tests:
 {{testSettings.urls}}
 
 **Example usage (relative URLs):**

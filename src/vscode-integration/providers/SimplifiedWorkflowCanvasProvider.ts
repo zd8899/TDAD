@@ -691,7 +691,8 @@ export class SimplifiedWorkflowCanvasProvider {
                                 message.modes || ['bdd', 'test', 'run-fix'],
                                 message.concurrency || 1,
                                 message.waitForDependencies || false,
-                                message.sequentialTests ?? true
+                                message.sequentialTests ?? true,
+                                message.skipPassedScenarios ?? true
                             );
                             break;
                         }
@@ -836,9 +837,13 @@ export class SimplifiedWorkflowCanvasProvider {
      * @param folderId The folder ID to run nodes from (null = all nodes at root)
      * @param modes The automation modes to run
      */
-    public async runAllNodesAutomation(folderId: string | null, modes: ('bdd' | 'test' | 'run-fix')[]): Promise<void> {
+    public async runAllNodesAutomation(
+        folderId: string | null,
+        modes: ('bdd' | 'test' | 'run-fix')[],
+        skipPassedScenarios = true
+    ): Promise<void> {
         logCanvas(`runAllNodesAutomation (direct call) - folderId: ${folderId ?? 'all'}, modes: [${modes.join(', ')}]`);
-        await this._testWorkflowHandlers.handleRunAllNodesAutomation(true, folderId, modes);
+        await this._testWorkflowHandlers.handleRunAllNodesAutomation(true, folderId, modes, 1, false, true, skipPassedScenarios);
     }
 
     /**

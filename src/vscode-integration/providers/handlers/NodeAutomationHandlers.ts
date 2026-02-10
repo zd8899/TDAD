@@ -642,9 +642,17 @@ export class NodeAutomationHandlers {
      * @param waitForDependencies Whether to wait for dependencies before starting a node
      * @param sequentialTests Whether to run test processes one at a time
      */
-    async handleRunAllNodesAutomation(confirmed = false, targetFolderId: string | null | undefined = undefined, modes: ('bdd' | 'test' | 'run-fix')[] = ['bdd', 'test', 'run-fix'], concurrency = 1, waitForDependencies = false, sequentialTests = true): Promise<void> {
+    async handleRunAllNodesAutomation(
+        confirmed = false,
+        targetFolderId: string | null | undefined = undefined,
+        modes: ('bdd' | 'test' | 'run-fix')[] = ['bdd', 'test', 'run-fix'],
+        concurrency = 1,
+        waitForDependencies = false,
+        sequentialTests = true,
+        skipPassedScenarios = true
+    ): Promise<void> {
         try {
-            logCanvas(`Starting run-all-nodes automation (modes: ${modes.join(', ')}, concurrency: ${concurrency}, waitDeps: ${waitForDependencies}, targetFolderId: ${targetFolderId ?? 'none'})`);
+            logCanvas(`Starting run-all-nodes automation (modes: ${modes.join(', ')}, concurrency: ${concurrency}, waitDeps: ${waitForDependencies}, skipPassed: ${skipPassedScenarios}, targetFolderId: ${targetFolderId ?? 'none'})`);
 
             const cancelAutomation = (message: string) => {
                 logCanvas(`Cancelling automation: ${message}`);
@@ -710,7 +718,8 @@ export class NodeAutomationHandlers {
                 folderId,
                 modes,
                 concurrency,
-                sequentialTests
+                sequentialTests,
+                skipPassedScenarios ? ['passed'] : []
             );
 
             // Auto-skip nodes based on skipStatuses from state file
@@ -738,7 +747,10 @@ export class NodeAutomationHandlers {
                 }
             });
 
-            const startMessage = `Starting automation for ${stateManager.getTotalNodes(state)} nodes (${stateManager.getSkippedCount(state)} already passed)...`;
+            const skippedCount = stateManager.getSkippedCount(state);
+            const startMessage = skippedCount > 0
+                ? `Starting automation for ${stateManager.getTotalNodes(state)} nodes (${skippedCount} already passed)...`
+                : `Starting automation for ${stateManager.getTotalNodes(state)} nodes...`;
             this.webview.postMessage({
                 command: 'allNodesAutomationStatus',
                 status: 'running',

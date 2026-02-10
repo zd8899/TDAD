@@ -25,7 +25,8 @@ export class AutomationStateManager {
         folderId: string | null,
         modes: ('bdd' | 'test' | 'run-fix')[],
         concurrency = 1,
-        sequentialTests = true
+        sequentialTests = true,
+        skipStatuses: AutomationNodeStatus[] = ['passed']
     ): AutomationState {
         const now = new Date().toISOString();
 
@@ -49,7 +50,7 @@ export class AutomationStateManager {
 
             _SKIP_NODES: 'Add status values here to skip those nodes. Example: ["passed", "failed"]',
             _SKIP_OPTIONS: 'pending | running | passed | failed | skipped',
-            skipStatuses: ['passed'],
+            skipStatuses: [...skipStatuses],
 
             _RETRY_SETTINGS: 'Control how many times to retry failed nodes',
             retryConfig: {

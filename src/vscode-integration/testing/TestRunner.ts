@@ -259,9 +259,14 @@ export class TestRunner implements ITestRunner {
             // Ensure Playwright global lock hook exists.
             scaffoldingService.ensurePlaywrightGlobalLockFile(workspacePath);
 
-            // Ensure TDAD playwright config exists before running tests
-            // Also backfills lock-enabled config for older workspaces.
+            // Ensure TDAD Playwright config bundle exists before running tests.
+            // Files:
+            // - .tdad/playwright.config.js (wrapper entrypoint)
+            // - .tdad/playwright.generated.js (TDAD-managed)
+            // - .tdad/playwright.user.js (user-managed overrides)
             const tdadConfigFile = path.join(workspacePath, '.tdad', 'playwright.config.js');
+            const tdadGeneratedConfigFile = path.join(workspacePath, '.tdad', 'playwright.generated.js');
+            const tdadUserConfigFile = path.join(workspacePath, '.tdad', 'playwright.user.js');
             const config = vscode.workspace.getConfiguration('tdad');
             // Fallback to 5173 only if no URLs configured (for generated projects, .vscode/settings.json should have correct ports)
             const urls = config.get<Record<string, string>>('test.urls', { ui: 'http://localhost:5173' });
@@ -271,24 +276,30 @@ export class TestRunner implements ITestRunner {
             let configReason = 'missing';
             if (!fs.existsSync(tdadConfigFile)) {
                 shouldRegenerateConfig = true;
-                configReason = 'missing';
+                configReason = 'missing-wrapper';
+            } else if (!fs.existsSync(tdadGeneratedConfigFile)) {
+                shouldRegenerateConfig = true;
+                configReason = 'missing-generated';
+            } else if (!fs.existsSync(tdadUserConfigFile)) {
+                shouldRegenerateConfig = true;
+                configReason = 'missing-user';
             } else {
                 try {
                     const currentConfig = fs.readFileSync(tdadConfigFile, 'utf-8');
-                    if (!currentConfig.includes('playwright-global-lock.cjs') || !currentConfig.includes('globalSetup')) {
+                    if (!currentConfig.includes('TDAD_WRAPPER_CONFIG_V2')) {
                         shouldRegenerateConfig = true;
-                        configReason = 'lock-hook-migration';
+                        configReason = 'legacy-wrapper-migration';
                     }
                 } catch {
                     shouldRegenerateConfig = true;
-                    configReason = 'read-failed';
+                    configReason = 'wrapper-read-failed';
                 }
             }
 
             if (shouldRegenerateConfig) {
                 scaffoldingService.scaffoldPlaywrightConfig(workspacePath, urls, workers);
-                const verb = configReason === 'missing' ? 'Created' : `Regenerated (${configReason})`;
-                logDiagnostic(`📝 ${verb} .tdad/playwright.config.js`);
+                const verb = configReason.startsWith('missing') ? 'Created' : `Regenerated (${configReason})`;
+                logDiagnostic(`TDAD Playwright config bundle created/updated (.tdad/playwright.config.js + generated/user files)`);
             }
 
             // Auto-assign test IDs before running (assigns [UI-XXX] or [API-XXX] to tests without IDs)
@@ -346,8 +357,8 @@ export class TestRunner implements ITestRunner {
             // Just pass the simple relative path - Playwright will handle it correctly
             const relativeTestPath = path.relative(workspacePath, testFilePath).replace(/\\/g, '/');
 
-            // Use TDAD's playwright config explicitly to avoid conflicts with user's own config
-            // URLs are configured in .tdad/playwright.config.js via projects (baseURL)
+            // Use TDAD's wrapper config explicitly to avoid conflicts with user's own config.
+            // Effective settings are generated config + user overrides merged by the wrapper.
             const tdadConfigPath = '.tdad/playwright.config.js';
 
             // MVP Phase 4: Code coverage for Playwright browser tests
@@ -749,7 +760,7 @@ export class TestRunner implements ITestRunner {
                 this.outputChannel.appendLine(`\n⚠️  ⚠️  ⚠️  DIAGNOSTIC: All tests failed waiting for page elements`);
                 this.outputChannel.appendLine(`🔍 This usually means:`);
                 this.outputChannel.appendLine(`   1. Your dev server is not running`);
-                this.outputChannel.appendLine(`   2. Check URLs in playwright.config.js (projects section)`);
+                this.outputChannel.appendLine(`   2. Check TDAD test URLs in Settings and any overrides in .tdad/playwright.user.js`);
                 this.outputChannel.appendLine(`   3. Start your servers or update URLs via TDAD Settings\n`);
             }
 
@@ -797,12 +808,17 @@ export class TestRunner implements ITestRunner {
      * Clean up Playwright test output for better readability
      * - Remove redundant folder name from file name (e.g., expose-scenario-crud-endpoints/expose-scenario-crud-endpoints.test.js -> expose-scenario-crud-endpoints.test.js)
      * - Remove column number from line reference (e.g., :933:3 -> :933)
+     * - Remove Playwright project label in list lines (e.g., [ui], [api])
      */
     private cleanTestOutput(output: string): string {
-        return output.replace(
-            /([\\\/])([^\\\/]+)[\\\/]\2\.test\.js:(\d+):\d+/g,
-            '$1$2.test.js:$3'
-        );
+        return output
+            .replace(
+                /([\\\/])([^\\\/]+)[\\\/]\2\.test\.js:(\d+):\d+/g,
+                '$1$2.test.js:$3'
+            )
+            // List reporter format: "x   1 [ui]  file:line ..."
+            // Remove only the project token after test index, keep title tags like [API-123].
+            .replace(/^(\s*\S+\s+\d+\s+)\[[^\]]+\]\s+/gm, '$1');
     }
 
     /**
@@ -1007,3 +1023,4 @@ export class TestRunner implements ITestRunner {
         this.terminal?.dispose();
     }
 }
+

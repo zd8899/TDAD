@@ -20,7 +20,8 @@
 2. **Install Dependencies:** Install necessary packages based on Tech Stack in Architecture.
 3. **Create Directories:** Create source and test folders.
 4. **Create Config Files:** Create appropriate config files (tsconfig, pyproject.toml, etc.).
-   - **DO NOT create playwright.config.ts** - TDAD automatically generates `.tdad/playwright.config.js`
+   - **DO NOT create playwright.config.ts** - TDAD automatically generates `.tdad/playwright.config.js` and `.tdad/playwright.generated.js`
+   - Put custom Playwright overrides only in `.tdad/playwright.user.js`
    - Install Playwright as dev dependency: `npm install -D @playwright/test`
 5. **Configure Development Servers:** Set up dev server configuration with appropriate port numbers for the tech stack (choose idiomatic defaults).
 6. **Configure TDAD Settings:** Create/update `.vscode/settings.json` with `tdad.test.urls` matching your chosen dev server ports.

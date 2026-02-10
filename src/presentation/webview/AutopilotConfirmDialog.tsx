@@ -19,7 +19,15 @@ interface AutopilotConfirmDialogProps {
   isSingleNode?: boolean;
   nodeName?: string;
   cliSettings?: CLISettings;
-  onConfirm: (modes: AutopilotModes, maxRetries: number, cliSettings?: { preset: string; skipPermissions: boolean }, concurrency?: number, waitForDependencies?: boolean, sequentialTests?: boolean) => void;
+  onConfirm: (
+    modes: AutopilotModes,
+    maxRetries: number,
+    cliSettings?: { preset: string; skipPermissions: boolean },
+    concurrency?: number,
+    waitForDependencies?: boolean,
+    sequentialTests?: boolean,
+    skipPassedScenarios?: boolean
+  ) => void;
   onCancel: () => void;
   onOpenSettings?: () => void;
 }
@@ -60,6 +68,7 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
   const [concurrency, setConcurrency] = useState<number>(1);
   const [waitForDependencies, setWaitForDependencies] = useState<boolean>(false);
   const [sequentialTests, setSequentialTests] = useState<boolean>(true);
+  const [skipPassedScenarios, setSkipPassedScenarios] = useState<boolean>(true);
 
   // CLI selection state
   const [selectedCli, setSelectedCli] = useState<string>('claude');
@@ -109,7 +118,15 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
     if (selectedModes.has('bdd')) {orderedModes.push('bdd');}
     if (selectedModes.has('test')) {orderedModes.push('test');}
     if (selectedModes.has('run-fix')) {orderedModes.push('run-fix');}
-    onConfirm(orderedModes, maxRetries, { preset: selectedCli, skipPermissions }, isSingleNode ? 1 : concurrency, waitForDependencies, concurrency > 1 ? sequentialTests : false);
+    onConfirm(
+      orderedModes,
+      maxRetries,
+      { preset: selectedCli, skipPermissions },
+      isSingleNode ? 1 : concurrency,
+      waitForDependencies,
+      concurrency > 1 ? sequentialTests : false,
+      skipPassedScenarios
+    );
   };
 
   const getMessage = () => {
@@ -218,6 +235,19 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
                 <span>Sequential test execution</span>
               </label>
             </div>
+          </div>
+        )}
+
+        {!isSingleNode && (
+          <div className="autopilot-retries-selector">
+            <label className="autopilot-skip-permissions-label">
+              <input
+                type="checkbox"
+                checked={skipPassedScenarios}
+                onChange={(e) => setSkipPassedScenarios(e.target.checked)}
+              />
+              <span>Skip Passed Scenarios</span>
+            </label>
           </div>
         )}
 

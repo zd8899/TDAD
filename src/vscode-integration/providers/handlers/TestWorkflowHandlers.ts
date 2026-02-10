@@ -250,8 +250,24 @@ export class TestWorkflowHandlers {
         return this.nodeAutomationHandlers.handleGetAutopilotInfo(_allFolders);
     }
 
-    async handleRunAllNodesAutomation(confirmed = false, targetFolderId: string | null | undefined = undefined, modes: ('bdd' | 'test' | 'run-fix')[] = ['bdd', 'test', 'run-fix'], concurrency = 1, waitForDependencies = false, sequentialTests = true): Promise<void> {
-        return this.nodeAutomationHandlers.handleRunAllNodesAutomation(confirmed, targetFolderId, modes, concurrency, waitForDependencies, sequentialTests);
+    async handleRunAllNodesAutomation(
+        confirmed = false,
+        targetFolderId: string | null | undefined = undefined,
+        modes: ('bdd' | 'test' | 'run-fix')[] = ['bdd', 'test', 'run-fix'],
+        concurrency = 1,
+        waitForDependencies = false,
+        sequentialTests = true,
+        skipPassedScenarios = true
+    ): Promise<void> {
+        return this.nodeAutomationHandlers.handleRunAllNodesAutomation(
+            confirmed,
+            targetFolderId,
+            modes,
+            concurrency,
+            waitForDependencies,
+            sequentialTests,
+            skipPassedScenarios
+        );
     }
 
     handleStopAllNodesAutomation(): void {

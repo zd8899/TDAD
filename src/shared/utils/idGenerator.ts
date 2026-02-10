@@ -112,9 +112,10 @@ function detectTestType(testContent: string): TestIdType {
  *
  * @param filePath - Path to the test file
  * @param workspacePath - Workspace root for scanning existing IDs
+ * @param preferredType - Optional node-level test layer override ('ui' | 'api')
  * @returns true if file was modified, false otherwise
  */
-export function assignTestIdsToFile(filePath: string, workspacePath: string): boolean {
+export function assignTestIdsToFile(filePath: string, workspacePath: string, preferredType?: TestIdType): boolean {
     if (!fs.existsSync(filePath)) {
         return false;
     }
@@ -125,9 +126,13 @@ export function assignTestIdsToFile(filePath: string, workspacePath: string): bo
     // Get current max IDs
     const counters = scanExistingTestIds(workspacePath);
 
-    // Pattern to match test declarations: test('name', ...) or test("name", ...)
+    // Pattern to match test declarations:
+    // - test('name', ...)
+    // - test.skip("name", ...)
+    // - test.only(`name`, ...)
     // Captures: full match, quote char, test name
-    const testPattern = /test\s*\(\s*(['"`])([^'"`]+)\1/g;
+    // Supports apostrophes/quotes inside titles when delimiter differs.
+    const testPattern = /test(?:\.(?:skip|only))?\s*\(\s*(['"`])((?:\\.|(?!\1)[\s\S])*?)\1/g;
 
     // Pattern to check if test already has numbered ID (e.g., [UI-001], [API-002], [UI-1000], etc.)
     const hasNumberedIdPattern = /^\[(UI|API)-\d+\]/;
@@ -138,6 +143,50 @@ export function assignTestIdsToFile(filePath: string, workspacePath: string): bo
 
     let match;
     const replacements: Array<{ original: string; replacement: string }> = [];
+
+    const extractTestBlockContent = (source: string, startIndex: number): string => {
+        // Find the arrow function for this test() call and then its body block.
+        // We intentionally look for the "{" that starts the function body (after =>),
+        // not the "{" from destructured params like async ({ page, tdadTrace }).
+        const arrowIndex = source.indexOf('=>', startIndex);
+        if (arrowIndex === -1) {
+            return '';
+        }
+
+        let bodyStart = -1;
+        for (let i = arrowIndex + 2; i < source.length; i++) {
+            const ch = source[i];
+            if (ch === '{') {
+                bodyStart = i;
+                break;
+            }
+            if (!/\s/.test(ch)) {
+                // Non-whitespace before body brace means unexpected shape.
+                // Fall back to UI classification.
+                return '';
+            }
+        }
+
+        if (bodyStart === -1) {
+            return '';
+        }
+
+        let braceCount = 1;
+        let bodyEnd = -1;
+        for (let i = bodyStart + 1; i < source.length; i++) {
+            if (source[i] === '{') {
+                braceCount++;
+            } else if (source[i] === '}') {
+                braceCount--;
+                if (braceCount === 0) {
+                    bodyEnd = i;
+                    break;
+                }
+            }
+        }
+
+        return bodyEnd !== -1 ? source.substring(bodyStart, bodyEnd) : '';
+    };
 
     while ((match = testPattern.exec(content)) !== null) {
         const fullMatch = match[0];
@@ -158,34 +207,13 @@ export function assignTestIdsToFile(filePath: string, workspacePath: string): bo
             // AI provided the prefix, extract type and remove prefix from name
             testType = prefixMatch[1].toLowerCase() as TestIdType;
             nameWithoutPrefix = testName.replace(hasPrefixOnlyPattern, '');
+        } else if (preferredType) {
+            // Node-level test layer override (API/UI) takes precedence over content heuristics.
+            testType = preferredType;
+            nameWithoutPrefix = testName;
         } else {
             // No prefix - detect type from test content
-            // Find the test block content to detect type
-            const testStartIndex = match.index;
-            let braceCount = 0;
-            let testBlockStart = -1;
-            let testBlockEnd = -1;
-
-            // Find the opening brace of the test function
-            for (let i = testStartIndex; i < content.length; i++) {
-                if (content[i] === '{') {
-                    if (braceCount === 0) {
-                        testBlockStart = i;
-                    }
-                    braceCount++;
-                } else if (content[i] === '}') {
-                    braceCount--;
-                    if (braceCount === 0 && testBlockStart !== -1) {
-                        testBlockEnd = i;
-                        break;
-                    }
-                }
-            }
-
-            // Extract test content and detect type
-            const testContent = testBlockStart !== -1 && testBlockEnd !== -1
-                ? content.substring(testBlockStart, testBlockEnd)
-                : '';
+            const testContent = extractTestBlockContent(content, match.index);
             testType = detectTestType(testContent);
             nameWithoutPrefix = testName;
         }
