@@ -245,6 +245,93 @@ export class SingleNodeOrchestrator {
     }
 
     /**
+     * Headless resume: handle AGENT_DONE using NEXT_TASK.md when orchestrator isn't running.
+     * This allows processing to continue even if the canvas panel is closed.
+     */
+    public async handleAgentDoneFromTaskFiles(node: Node, allNodes: Node[], allEdges: any[]): Promise<boolean> {
+        if (this.state.status === 'running') {
+            await this.onAgentDone();
+            return true;
+        }
+
+        const lastTask = this.taskFileManager.readLastTask();
+        if (!lastTask) {
+            logger.log('SINGLE-NODE-ORCHESTRATOR', 'Headless agent done: NEXT_TASK.md not found');
+            return false;
+        }
+
+        const inferredPhase = this.inferPhaseFromTask(lastTask);
+        if (!inferredPhase) {
+            logger.log('SINGLE-NODE-ORCHESTRATOR', 'Headless agent done: could not infer phase from NEXT_TASK.md');
+            return false;
+        }
+
+        const { retryCount, maxRetries } = this.parseRetryFromTask(lastTask);
+        if (maxRetries !== null) {
+            this.maxRetries = maxRetries;
+        }
+
+        this.targetNode = node;
+        this.allNodes = allNodes;
+        this.allEdges = allEdges;
+
+        this.automationModes = this.inferModesFromPhase(inferredPhase);
+
+        this.updateState({
+            status: 'running',
+            phase: inferredPhase,
+            nodeId: node.id,
+            nodeTitle: node.title,
+            currentRetry: retryCount,
+            maxRetries: this.maxRetries,
+            message: `Resuming from AGENT_DONE (phase=${inferredPhase})`
+        });
+
+        await this.onAgentDone();
+        return true;
+    }
+
+    private inferPhaseFromTask(taskContent: string): SingleNodePhase | null {
+        const content = taskContent.toUpperCase();
+        if (content.includes('GENERATE_BDD') || content.includes('GENERATE BDD')) {
+            return 'bdd';
+        }
+        if (content.includes('GENERATE_TESTS') || content.includes('GENERATE TESTS')) {
+            return 'generating';
+        }
+        if (content.includes('FIX') || content.includes('FIX THE FAILING')) {
+            return 'fixing';
+        }
+        return null;
+    }
+
+    private inferModesFromPhase(phase: SingleNodePhase): AutopilotModes {
+        if (phase === 'bdd') {
+            return ['bdd'];
+        }
+        if (phase === 'generating') {
+            return ['test'];
+        }
+        if (phase === 'fixing') {
+            return ['run-fix'];
+        }
+        return ['bdd', 'test', 'run-fix'];
+    }
+
+    private parseRetryFromTask(taskContent: string): { retryCount: number; maxRetries: number | null } {
+        const match = taskContent.match(/\*\*Retry:\*\*\s*(\d+)\s*\/\s*(\d+)/i) || taskContent.match(/Retry:\s*(\d+)\s*\/\s*(\d+)/i);
+        if (!match) {
+            return { retryCount: 0, maxRetries: null };
+        }
+        const retryCount = Number.parseInt(match[1], 10);
+        const maxRetries = Number.parseInt(match[2], 10);
+        return {
+            retryCount: Number.isFinite(retryCount) ? retryCount : 0,
+            maxRetries: Number.isFinite(maxRetries) ? maxRetries : null
+        };
+    }
+
+    /**
      * Write BDD generation task
      * Matches the full context from manual handleCopyBddPrompt
      * Sprint 14 Fix: Create feature file scaffold BEFORE writing task (like manual flow)

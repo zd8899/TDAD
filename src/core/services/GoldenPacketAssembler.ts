@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as vscode from 'vscode';
 import { Node, Edge, TestResult } from '../../shared/types';
 import { toPascalCase, getWorkflowFolderName } from '../../shared/utils/stringUtils';
 import { getFeatureFilePath, getActionFilePath, getTestFilePath } from '../../shared/utils/nodePathUtils';
@@ -329,18 +330,36 @@ export class GoldenPacketAssembler {
     }
 
     /**
-     * Get documentation context from node.contextFiles
+     * Get documentation context from docsRoot + node.contextFiles
+     * Matches PromptGenerationService behavior (BDD/Test prompts).
      */
     private static async getDocumentationContext(node: Node, workspacePath: string): Promise<string> {
-        const contextFiles = (node as any).contextFiles as string[] | undefined;
+        const config = vscode.workspace.getConfiguration('tdad');
+        const docsRoot = config.get<string>('project.docsRoot', 'docs/');
 
-        if (!contextFiles || contextFiles.length === 0) {
+        const allContextFiles: string[] = [];
+
+        if (docsRoot) {
+            const docsRootFiles = await this.getFilesFromDocsRoot(workspacePath, docsRoot);
+            allContextFiles.push(...docsRootFiles);
+        }
+
+        const contextFiles = (node as any).contextFiles as string[] | undefined;
+        if (contextFiles && contextFiles.length > 0) {
+            for (const file of contextFiles) {
+                if (!allContextFiles.includes(file)) {
+                    allContextFiles.push(file);
+                }
+            }
+        }
+
+        if (allContextFiles.length === 0) {
             return '';
         }
 
         try {
             const fileContents = await DocumentationRetriever.readDocumentationFiles(
-                contextFiles,
+                allContextFiles,
                 workspacePath
             );
 
@@ -348,11 +367,35 @@ export class GoldenPacketAssembler {
                 return '';
             }
 
-            return DocumentationRetriever.formatFilesForPrompt(fileContents);
+            return DocumentationRetriever.formatDocumentationContextForPrompt(fileContents);
         } catch (error) {
             logError('GOLDEN-PACKET', 'Failed to read documentation files', error);
             return '';
         }
+    }
+
+    private static async getFilesFromDocsRoot(workspacePath: string, docsRoot: string): Promise<string[]> {
+        const docsPath = path.join(workspacePath, docsRoot);
+        const files: string[] = [];
+
+        try {
+            const entries = await fs.promises.readdir(docsPath, { withFileTypes: true });
+            for (const entry of entries) {
+                if (entry.isFile() && this.isDocumentationFile(entry.name)) {
+                    files.push(path.join(docsRoot, entry.name));
+                }
+            }
+        } catch {
+            logger.log('GOLDEN-PACKET', `docsRoot directory not found: ${docsRoot}`);
+        }
+
+        return files;
+    }
+
+    private static isDocumentationFile(fileName: string): boolean {
+        const docExtensions = ['.md', '.txt', '.json', '.yaml', '.yml'];
+        const ext = path.extname(fileName).toLowerCase();
+        return docExtensions.includes(ext);
     }
 
     /**

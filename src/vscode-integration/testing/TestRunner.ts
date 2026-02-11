@@ -28,7 +28,9 @@ export class TestRunner implements ITestRunner {
     private outputChannel: vscode.OutputChannel;
     private terminal: vscode.Terminal | undefined;
     private currentProcess: ChildProcess | null = null;
-    private defaultTimeout = 60000; // 60 seconds
+    private activeProcesses: Map<number, { process: ChildProcess; workingDir: string }> = new Map();
+    private observedWorkingDirs: Set<string> = new Set();
+    private cancelRequested = false;
 
     /** When true, only one test process runs at a time (queue via promise chain) */
     static sequentialMode = false;
@@ -39,9 +41,6 @@ export class TestRunner implements ITestRunner {
 
     constructor() {
         this.outputChannel = vscode.window.createOutputChannel('TDAD Tests');
-        // Get timeout from configuration
-        const config = vscode.workspace.getConfiguration('tdad');
-        this.defaultTimeout = config.get<number>('test.timeout', 60000);
     }
 
     async runNodeTests(node: Node, generatedCode: string, options?: TestRunOptions): Promise<TestResult[]> {
@@ -82,8 +81,9 @@ export class TestRunner implements ITestRunner {
 
     private async runNodeTestsInternal(node: Node, generatedCode: string, options: TestRunOptions | undefined, runToken: number): Promise<TestResult[]> {
         const startTime = Date.now();
+        this.cancelRequested = false;
         const opts: TestRunOptions = {
-            timeout: options?.timeout || this.defaultTimeout,
+            timeout: undefined,
             framework: 'playwright',
             silent: options?.silent || false
         };
@@ -104,7 +104,7 @@ export class TestRunner implements ITestRunner {
 
         this.outputChannel.appendLine(`${'='.repeat(60)}`);
         this.outputChannel.appendLine(`Running tests for node: ${node.title}`);
-        this.outputChannel.appendLine(`Timeout: ${opts.timeout}ms | Framework: Playwright`);
+        this.outputChannel.appendLine(`Timeout: disabled | Framework: Playwright`);
         this.outputChannel.appendLine(`${'='.repeat(60)}\n`);
 
         // Look for automated test file (should exist if code was generated properly)
@@ -230,13 +230,13 @@ export class TestRunner implements ITestRunner {
         const workspacePath = workspaceFolder.uri.fsPath;
         this.outputChannel.appendLine(`🔧 Using test framework: playwright\n`);
 
-        return await this.runPlaywrightTests(testFilePath, node, workspacePath, options.timeout!, runToken);
+        return await this.runPlaywrightTests(testFilePath, node, workspacePath, runToken);
     }
 
     /**
      * Run Playwright tests with enhanced error reporting
      */
-    private async runPlaywrightTests(testFilePath: string, node: Node, workspacePath: string, timeout: number, runToken: number): Promise<TestExecutionResult> {
+    private async runPlaywrightTests(testFilePath: string, node: Node, workspacePath: string, runToken: number): Promise<TestExecutionResult> {
         const startTime = Date.now();
 
         if (this.isCancellationRequested(runToken)) {
@@ -376,9 +376,9 @@ export class TestRunner implements ITestRunner {
             logDiagnostic(`🔍 Relative test path: ${relativeTestPath}`);
             logDiagnostic(`🔍 TDAD config: ${tdadConfigPath}`);
 
-            const execResult = await this.executeCommandWithTimeout(command, workspacePath, timeout);
+            const execResult = await this.executeCommandWithTimeout(command, workspacePath);
 
-            if (this.isCancellationRequested(runToken)) {
+            if (this.isCancellationRequested(runToken) || this.cancelRequested) {
                 return this.createCanceledExecutionResult(Date.now() - startTime);
             }
 
@@ -394,19 +394,60 @@ export class TestRunner implements ITestRunner {
 
             let jsonResult;
             try {
-                // With --reporter=list,json, stdout contains both list output and JSON
-                // Extract just the JSON portion (starts with { and ends with })
-                const jsonStart = execResult.stdout.indexOf('\n{');
-                const jsonEnd = execResult.stdout.lastIndexOf('}');
+                // With mixed stdout (globalSetup logs + JSON), parse the final valid JSON payload.
+                const extractPlaywrightJson = (output: string): any => {
+                    const trimmed = output.trim();
+                    if (!trimmed) {
+                        throw new Error('Empty Playwright output');
+                    }
 
-                if (jsonStart === -1 || jsonEnd === -1) {
-                    throw new Error('Could not find JSON in output');
-                }
+                    // Fast path: pure JSON payload.
+                    try {
+                        return JSON.parse(trimmed);
+                    } catch {
+                        // Continue with mixed-output recovery.
+                    }
 
-                const jsonString = execResult.stdout.substring(jsonStart + 1, jsonEnd + 1);
-                jsonResult = JSON.parse(jsonString);
+                    const jsonEnd = output.lastIndexOf('}');
+                    if (jsonEnd === -1) {
+                        throw new Error('Could not find JSON end token in output');
+                    }
+
+                    // Try parsing from each object start, searching backward from the end.
+                    // This tolerates leading logs and random object-like text before reporter JSON.
+                    const startCandidates: number[] = [];
+                    for (let i = 0; i < jsonEnd; i++) {
+                        if (output[i] === '{') {
+                            startCandidates.push(i);
+                        }
+                    }
+
+                    for (let i = startCandidates.length - 1; i >= 0; i--) {
+                        const start = startCandidates[i];
+                        const candidate = output.substring(start, jsonEnd + 1).trim();
+                        if (!candidate.startsWith('{')) {
+                            continue;
+                        }
+                        try {
+                            const parsed = JSON.parse(candidate);
+                            if (parsed && typeof parsed === 'object' && Array.isArray(parsed.suites) && parsed.stats) {
+                                return parsed;
+                            }
+                        } catch {
+                            // Try next candidate
+                        }
+                    }
+
+                    throw new Error('Could not extract valid Playwright JSON payload from mixed output');
+                };
+
+                jsonResult = extractPlaywrightJson(execResult.stdout);
             } catch (parseError) {
+                if (this.isCancellationRequested(runToken) || this.cancelRequested) {
+                    return this.createCanceledExecutionResult(Date.now() - startTime);
+                }
                 logDiagnostic(`\n❌ Failed to parse Playwright JSON output`);
+                logDiagnostic(`Parse error: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
                 logDiagnostic(`Output length: ${execResult.stdout.length} characters`);
                 logDiagnostic(`First 500 chars: ${execResult.stdout.substring(0, 500)}`);
                 logDiagnostic(`Last 500 chars: ${execResult.stdout.substring(Math.max(0, execResult.stdout.length - 500))}`);
@@ -824,7 +865,7 @@ export class TestRunner implements ITestRunner {
     /**
      * Execute command with timeout support using spawn for better process control
      */
-    private executeCommandWithTimeout(command: string, workingDir: string, timeout: number, env?: Record<string, string>): Promise<{
+    private executeCommandWithTimeout(command: string, workingDir: string, timeout?: number, env?: Record<string, string>): Promise<{
         stdout: string;
         stderr: string;
         exitCode: number | null;
@@ -835,6 +876,7 @@ export class TestRunner implements ITestRunner {
             let stderr = '';
             let timedOut = false;
             let processExited = false;
+            let resolved = false;
 
             // Parse command for cross-platform execution
             const isWindows = process.platform === 'win32';
@@ -849,34 +891,36 @@ export class TestRunner implements ITestRunner {
             }
 
             // Spawn process with shell
-            this.currentProcess = spawn(shell, [shellFlag, command], {
+            const childProcess = spawn(shell, [shellFlag, command], {
                 cwd: workingDir,
                 windowsHide: true,
                 env: env ? { ...process.env, ...env } : process.env
             });
+            this.currentProcess = childProcess;
+            this.trackActiveProcess(childProcess, workingDir);
 
-            this.outputChannel.appendLine(`✅ Process spawned (PID: ${this.currentProcess.pid})\n`);
+            this.outputChannel.appendLine(`✅ Process spawned (PID: ${childProcess.pid})\n`);
 
-            // Set up timeout
-            const timeoutHandle = setTimeout(() => {
-                if (!processExited && this.currentProcess) {
+            // Timeout disabled by default. Keep optional support only when a positive timeout is explicitly passed.
+            const timeoutHandle = timeout && timeout > 0 ? setTimeout(() => {
+                if (!processExited && !resolved) {
                     timedOut = true;
-                    this.outputChannel.appendLine(`\n⚠️  Killing process due to timeout (${timeout}ms)`);
-
-                    // Try graceful termination first
-                    this.currentProcess.kill('SIGTERM');
-
-                    // Force kill after 2 seconds if still running
-                    setTimeout(() => {
-                        if (this.currentProcess && !processExited) {
-                            this.currentProcess.kill('SIGKILL');
-                        }
-                    }, 2000);
+                    processExited = true;
+                    clearInterval(progressInterval);
+                    const pid = childProcess.pid;
+                    if (pid) {
+                        this.untrackActiveProcess(pid);
+                    }
+                    if (this.currentProcess?.pid === pid) {
+                        this.currentProcess = null;
+                    }
+                    resolved = true;
+                    resolve({ stdout, stderr, exitCode: null, timedOut });
                 }
-            }, timeout);
+            }, timeout) : null;
 
             // Collect stdout and stream to output in real-time
-            this.currentProcess.stdout?.on('data', (data) => {
+            childProcess.stdout?.on('data', (data) => {
                 const text = data.toString();
                 stdout += text;
                 // Stream to output channel in real-time for debugging
@@ -885,7 +929,7 @@ export class TestRunner implements ITestRunner {
 
             // Collect stderr and stream to output in real-time
             // Note: Playwright 'list' reporter outputs to stderr, so we show it without prefix
-            this.currentProcess.stderr?.on('data', (data) => {
+            childProcess.stderr?.on('data', (data) => {
                 const text = data.toString();
                 stderr += text;
                 // Clean up test paths before displaying (remove .tdad/workflows prefix and redundant folder names)
@@ -905,11 +949,22 @@ export class TestRunner implements ITestRunner {
             }, 5000);
 
             // Handle process exit
-            this.currentProcess.on('close', (code) => {
+            childProcess.on('close', (code) => {
+                if (resolved) {
+                    return;
+                }
                 processExited = true;
-                clearTimeout(timeoutHandle);
+                if (timeoutHandle) {
+                    clearTimeout(timeoutHandle);
+                }
                 clearInterval(progressInterval);
-                this.currentProcess = null;
+                const pid = childProcess.pid;
+                if (pid) {
+                    this.untrackActiveProcess(pid);
+                }
+                if (this.currentProcess?.pid === pid) {
+                    this.currentProcess = null;
+                }
 
                 const elapsed = Date.now() - startTime;
                 this.outputChannel.appendLine(`\n✅ Process exited with code ${code} after ${Math.floor(elapsed / 1000)}s`);
@@ -917,22 +972,36 @@ export class TestRunner implements ITestRunner {
                 // For Playwright commands, ALWAYS resolve even with non-zero exit codes
                 // Playwright exits with code 1 when tests fail, but still provides valid JSON output
                 if (command.includes('playwright')) {
+                    resolved = true;
                     resolve({ stdout, stderr, exitCode: code, timedOut });
                 } else if (timedOut) {
+                    resolved = true;
                     resolve({ stdout, stderr, exitCode: code, timedOut });
                 } else if (code !== 0) {
                     reject(new Error(`Process exited with code ${code}\n${stderr}`));
                 } else {
+                    resolved = true;
                     resolve({ stdout, stderr, exitCode: code, timedOut });
                 }
             });
 
             // Handle process errors
-            this.currentProcess.on('error', (error) => {
+            childProcess.on('error', (error) => {
+                if (resolved) {
+                    return;
+                }
                 processExited = true;
-                clearTimeout(timeoutHandle);
+                if (timeoutHandle) {
+                    clearTimeout(timeoutHandle);
+                }
                 clearInterval(progressInterval);
-                this.currentProcess = null;
+                const pid = childProcess.pid;
+                if (pid) {
+                    this.untrackActiveProcess(pid);
+                }
+                if (this.currentProcess?.pid === pid) {
+                    this.currentProcess = null;
+                }
                 this.outputChannel.appendLine(`\n❌ Process error: ${error.message}`);
                 reject(error);
             });
@@ -996,13 +1065,19 @@ export class TestRunner implements ITestRunner {
      */
     public cancelCurrentTest(): void {
         TestRunner.cancellationVersion += 1;
+        this.cancelRequested = true;
 
-        if (this.currentProcess) {
+        if (this.activeProcesses.size > 0) {
             this.outputChannel.appendLine('\n🛑 Canceling test execution...');
-            this.currentProcess.kill('SIGTERM');
+            for (const pid of this.activeProcesses.keys()) {
+                this.terminateProcessTree(pid);
+            }
+            this.releaseStaleTestLocks();
+            this.activeProcesses.clear();
             this.currentProcess = null;
         } else {
             this.outputChannel.appendLine('\nCancel requested for queued/waiting test executions.');
+            this.releaseStaleTestLocks();
         }
     }
 
@@ -1010,17 +1085,76 @@ export class TestRunner implements ITestRunner {
      * Get test execution status
      */
     public isTestRunning(): boolean {
-        return this.currentProcess !== null;
+        return this.activeProcesses.size > 0;
     }
 
     public dispose() {
         // Cancel any running process before disposing
-        if (this.currentProcess) {
-            this.currentProcess.kill('SIGTERM');
+        if (this.activeProcesses.size > 0) {
+            for (const pid of this.activeProcesses.keys()) {
+                this.terminateProcessTree(pid);
+            }
+            this.releaseStaleTestLocks();
+            this.activeProcesses.clear();
             this.currentProcess = null;
         }
         this.outputChannel.dispose();
         this.terminal?.dispose();
+    }
+
+    private trackActiveProcess(childProcess: ChildProcess, workingDir: string): void {
+        const pid = childProcess.pid;
+        this.observedWorkingDirs.add(workingDir);
+        if (!pid) {
+            return;
+        }
+        this.activeProcesses.set(pid, { process: childProcess, workingDir });
+    }
+
+    private untrackActiveProcess(pid: number): void {
+        this.activeProcesses.delete(pid);
+    }
+
+    private releaseStaleTestLocks(): void {
+        try {
+            const candidateDirs = new Set<string>(this.observedWorkingDirs);
+            for (const workspaceFolder of vscode.workspace.workspaceFolders ?? []) {
+                candidateDirs.add(workspaceFolder.uri.fsPath);
+            }
+
+            for (const dir of candidateDirs) {
+                const lockFile = path.join(dir, '.tdad', '.test-lock');
+                if (fs.existsSync(lockFile)) {
+                    fs.unlinkSync(lockFile);
+                }
+            }
+        } catch {
+            // Best-effort cleanup only.
+        }
+    }
+
+    private terminateProcessTree(pid: number): void {
+        try {
+            if (process.platform === 'win32') {
+                // Ensure child processes (e.g., npx/playwright) are terminated as well.
+                spawn('taskkill', ['/PID', `${pid}`, '/T', '/F'], { windowsHide: true });
+            } else {
+                try {
+                    process.kill(pid, 'SIGTERM');
+                } catch {
+                    return;
+                }
+                setTimeout(() => {
+                    try {
+                        process.kill(pid, 'SIGKILL');
+                    } catch {
+                        // Ignore if already gone.
+                    }
+                }, 2000);
+            }
+        } catch {
+            // Best-effort termination.
+        }
     }
 }
 

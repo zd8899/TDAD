@@ -9,6 +9,11 @@ import { logExtension, logError, logger } from './shared/utils/Logger';
 import { TDADBootstrap } from './vscode-integration/bootstrap/TDADBootstrap';
 import { FeedbackManager } from './vscode-integration/providers/handlers/FeedbackManager';
 import { SlackState, connectSlack, disconnectSlack, autoConnectSlack } from './vscode-integration/SlackInitializer';
+import { FeatureMapStorage } from './infrastructure/storage/FeatureMapStorage';
+import { SingleNodeOrchestrator } from './core/services/SingleNodeOrchestrator';
+import { AgentOrchestrator } from './core/services/AgentOrchestrator';
+import { CLIAgentLauncher } from './vscode-integration/CLIAgentLauncher';
+import { Node } from './shared/types';
 
 export function activate(context: vscode.ExtensionContext) {
     let workflowController: WorkflowController;
@@ -431,6 +436,104 @@ export function activate(context: vscode.ExtensionContext) {
     const agentDoneWatcher = vscode.workspace.createFileSystemWatcher('**/.tdad/AGENT_DONE.md');
     const AGENT_DONE_DISPATCH_DELAY_MS = 180;
     const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+
+    const updateNodeStatusHeadless = (storage: FeatureMapStorage, nodeId: string, passed: boolean) => {
+        const allNodes = storage.loadAll();
+        const node = allNodes.find(n => n.id === nodeId);
+        if (!node) {
+            logExtension(`Headless update: node not found for status update (${nodeId})`);
+            return;
+        }
+        (node as any).status = passed ? 'passed' : 'failed';
+        storage.updateNodeById(node);
+    };
+
+    const handleAgentDoneHeadless = async (eventType: 'created' | 'changed', filePath: string) => {
+        try {
+            if (!workspaceRoot) {
+                logExtension(`Headless AGENT_DONE ignored (no workspace): ${filePath}`);
+                return;
+            }
+
+            const storage = new FeatureMapStorage();
+            const testRunner = new TestRunner();
+            const orchestrator = new AgentOrchestrator(workspaceRoot, context.extensionPath);
+            orchestrator.setDependencies(testRunner, storage);
+            orchestrator.setCallbacks({
+                onNodeComplete: (nodeId: string, passed: boolean) => {
+                    updateNodeStatusHeadless(storage, nodeId, passed);
+                },
+                onError: (error: Error) => {
+                    logError('EXTENSION', 'Headless agent orchestrator error', error);
+                },
+                onTaskWritten: (taskFile: string, taskDescription: string) => {
+                    const launcher = CLIAgentLauncher.getInstance(workspaceRoot);
+                    launcher.triggerAgent(taskFile, taskDescription);
+                }
+            });
+
+            const allNodes = storage.loadAll();
+            const allEdges = storage.loadAllEdges();
+            await orchestrator.onAgentDone(allNodes, allEdges);
+            logExtension(`Headless agent done processed (${eventType}): ${filePath}`);
+        } catch (error) {
+            logError('EXTENSION', `Failed headless AGENT_DONE (${eventType})`, error);
+        }
+    };
+
+    const handlePerNodeAgentDoneHeadless = async (nodeId: string, eventType: 'created' | 'changed', filePath: string) => {
+        try {
+            if (!workspaceRoot) {
+                logExtension(`Headless per-node AGENT_DONE ignored (no workspace): ${filePath}`);
+                return;
+            }
+
+            const storage = new FeatureMapStorage();
+            const allNodes = storage.loadAll();
+            const allEdges = storage.loadAllEdges();
+            const node = allNodes.find(n => n.id === nodeId);
+            if (!node) {
+                logExtension(`Headless per-node AGENT_DONE ignored (node not found): ${nodeId}`);
+                return;
+            }
+
+            const orchestrator = new SingleNodeOrchestrator(workspaceRoot, context.extensionPath, nodeId);
+            const testRunner = new TestRunner();
+            orchestrator.setTestRunner({
+                runNodeTests: async (testNode: Node, _filter: string) => {
+                    return await testRunner.runNodeTests(testNode, '');
+                },
+                cancelCurrentTest: () => {
+                    testRunner.cancelCurrentTest();
+                }
+            });
+            orchestrator.setCallbacks({
+                onStatusChange: (state) => {
+                    logExtension(`Headless per-node status [${nodeId}]: ${state.phase} - ${state.message}`);
+                },
+                onComplete: (completedNodeId: string, passed: boolean) => {
+                    updateNodeStatusHeadless(storage, completedNodeId, passed);
+                },
+                onError: (error: Error) => {
+                    logError('EXTENSION', `Headless per-node automation error (${nodeId})`, error);
+                },
+                onTaskWritten: (taskFile: string, taskDescription: string) => {
+                    const launcher = CLIAgentLauncher.getInstance(workspaceRoot);
+                    launcher.triggerAgent(taskFile, taskDescription, nodeId);
+                }
+            });
+
+            const handled = await orchestrator.handleAgentDoneFromTaskFiles(node, allNodes, allEdges);
+            if (!handled) {
+                logExtension(`Headless per-node AGENT_DONE ignored (no actionable task) for ${nodeId}: ${filePath}`);
+                return;
+            }
+            logExtension(`Headless per-node AGENT_DONE processed (${eventType}) for ${nodeId}`);
+        } catch (error) {
+            logError('EXTENSION', `Failed headless per-node AGENT_DONE (${eventType}) for ${nodeId}`, error);
+        }
+    };
 
     agentDoneWatcher.onDidCreate(async (uri) => {
         logExtension(`Agent done signal detected (created): ${uri.fsPath}`);
@@ -448,6 +551,7 @@ export function activate(context: vscode.ExtensionContext) {
             const panel = SimplifiedWorkflowCanvasProvider.currentPanel;
             if (!panel) {
                 logExtension(`Agent done signal (${eventType}) ignored (no active canvas panel): ${filePath}`);
+                await handleAgentDoneHeadless(eventType, filePath);
                 return;
             }
 
@@ -503,6 +607,7 @@ export function activate(context: vscode.ExtensionContext) {
             const panel = SimplifiedWorkflowCanvasProvider.currentPanel;
             if (!panel) {
                 logExtension(`Per-node agent done (${eventType}) ignored for ${nodeId} (no active canvas panel): ${filePath}`);
+                await handlePerNodeAgentDoneHeadless(nodeId, eventType, filePath);
                 return;
             }
 

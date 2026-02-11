@@ -69,7 +69,7 @@ Read these files to understand the current implementation:
 ## 🛠️ Project Context (Tech Stack)
 {{projectContext}}
 
-**Tests run via:** `npx playwright test --config=.tdad/playwright.config.js --reporter=list,json`
+**Tests run via:** `npx playwright test <relative-path-to-test-file> --config=.tdad/playwright.config.js --reporter=list,json`
 **Custom Playwright overrides:** `.tdad/playwright.user.js` (do not edit generated config files)
 {{/if}}
 

@@ -1,7 +1,7 @@
 import { Node, TestResult } from '../../shared/types';
 
 export interface TestRunOptions {
-    timeout?: number; // milliseconds, default 30000 (30 seconds)
+    timeout?: number; // milliseconds; ignored by TDAD runner (timeout disabled)
     framework?: 'playwright'; // Only Playwright is supported
     silent?: boolean; // Don't show output channel
     dependencyContext?: Record<string, any>; // Runtime context from upstream dependencies
