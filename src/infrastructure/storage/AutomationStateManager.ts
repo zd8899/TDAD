@@ -26,7 +26,8 @@ export class AutomationStateManager {
         modes: ('bdd' | 'test' | 'run-fix')[],
         concurrency = 1,
         sequentialTests = true,
-        skipStatuses: AutomationNodeStatus[] = ['passed']
+        skipStatuses: AutomationNodeStatus[] = ['passed'],
+        batchTestMode = false
     ): AutomationState {
         const now = new Date().toISOString();
 
@@ -61,7 +62,8 @@ export class AutomationStateManager {
             _EXECUTION: 'Set concurrency > 1 to run multiple nodes in parallel',
             executionSettings: {
                 concurrency,  // 1 = sequential, >1 = parallel
-                sequentialTests  // true = only one test process at a time
+                sequentialTests,  // true = only one test process at a time
+                batchTestMode  // true = run all tests in one Playwright command
             },
 
             _NODES_HELP: 'Reorder this array to change execution order. Edit each node status/modes as needed.',

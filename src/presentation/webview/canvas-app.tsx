@@ -632,7 +632,8 @@ const CanvasApp: React.FC = () => {
     concurrency?: number,
     waitForDependencies?: boolean,
     sequentialTests?: boolean,
-    skipPassedScenarios?: boolean
+    skipPassedScenarios?: boolean,
+    batchTestMode?: boolean
   ) => {
     setAutopilotDialogOpen(false);
 
@@ -657,7 +658,8 @@ const CanvasApp: React.FC = () => {
         concurrency: concurrency || 1,
         waitForDependencies: waitForDependencies || false,
         sequentialTests: sequentialTests ?? true,
-        skipPassedScenarios: skipPassedScenarios ?? true
+        skipPassedScenarios: skipPassedScenarios ?? true,
+        batchTestMode: batchTestMode || false
       });
     }
   }, [postMessage, autopilotIsSingleNode, autopilotIsAllFolders, selectedNode]);

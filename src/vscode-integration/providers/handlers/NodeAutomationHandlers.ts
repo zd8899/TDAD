@@ -11,11 +11,14 @@ import { TestExecutionHandlers } from './TestExecutionHandlers';
 import { CLIAgentLauncher } from '../../CLIAgentLauncher';
 import { AutomationStateManager } from '../../../infrastructure/storage/AutomationStateManager';
 import { TestRunner } from '../../testing/TestRunner';
+import { BatchTestExecutionHandler } from './BatchTestExecutionHandler';
+import { getDescendantNodeIds, expandFolderEdges, sortNodesByDependency } from '../../../shared/utils/nodeHelpers';
 
 export class NodeAutomationHandlers {
     private orchestrators: Map<string, SingleNodeOrchestrator> = new Map();
     private automationProgressCallback: ((update: AutomationProgressUpdate) => void) | null = null;
     private readonly nodeStatusSnapshot: Map<string, NodeStatus | undefined> = new Map();
+    private readonly batchHandler: BatchTestExecutionHandler;
 
     constructor(
         private readonly webview: vscode.Webview,
@@ -26,7 +29,12 @@ export class NodeAutomationHandlers {
         private readonly testExecutionHandlers: TestExecutionHandlers,
         private readonly checkSingleNodeFileStatus: (nodeId: string) => Promise<void>,
         private readonly nodeStatusService: NodeStatusService
-    ) {}
+    ) {
+        this.batchHandler = new BatchTestExecutionHandler(
+            webview, storage, nodeManager, context,
+            testResultsCache, testExecutionHandlers, nodeStatusService
+        );
+    }
 
     /**
      * Set callback for automation progress updates (used by Slack integration)
@@ -161,135 +169,6 @@ export class NodeAutomationHandlers {
         return changed;
     }
 
-    /**
-     * Get all descendant node IDs of a folder (recursive)
-     */
-    private getDescendantNodeIds(folderId: string, allNodes: Node[]): Set<string> {
-        const descendants = new Set<string>();
-
-        logCanvas(`getDescendantNodeIds: Looking for descendants of folder ${folderId}`);
-        logCanvas(`getDescendantNodeIds: Total nodes to search: ${allNodes.length}`);
-
-        const collectDescendants = (parentId: string) => {
-            for (const node of allNodes) {
-                if ((node as any).parentId === parentId) {
-                    descendants.add(node.id);
-                    logCanvas(`getDescendantNodeIds: Found descendant: ${node.title} (${node.id}) with parentId=${(node as any).parentId}`);
-                    if (node.nodeType === 'folder') {
-                        collectDescendants(node.id);
-                    }
-                }
-            }
-        };
-
-        collectDescendants(folderId);
-        logCanvas(`getDescendantNodeIds: Found ${descendants.size} total descendants`);
-        return descendants;
-    }
-
-    /**
-     * Expand folder-level edges into feature-node edges so topological sort respects folder order.
-     * - Within each folder: creates a chain based on the children array order (child[0] → child[1] → ...)
-     * - Across folders: if folder A → folder B, the last child of A must complete before the first child of B
-     */
-    private expandFolderEdges(featureNodes: Node[], allNodes: Node[], edges: Array<{ source: string; target: string }>): Array<{ source: string; target: string }> {
-        const featureNodeIds = new Set(featureNodes.map(n => n.id));
-        const folderNodes = allNodes.filter(n => n.nodeType === 'folder');
-        const folderMap = new Map(folderNodes.map(f => [f.id, f]));
-        const expandedEdges: Array<{ source: string; target: string }> = [];
-
-        // Get ordered feature children of a folder (respecting children array order)
-        const getOrderedFeatureChildren = (folderId: string): string[] => {
-            const folder = folderMap.get(folderId);
-            if (!folder || !(folder as any).children) { return []; }
-            return ((folder as any).children as string[]).filter(id => featureNodeIds.has(id));
-        };
-
-        // Within-folder chains: children execute in declared order
-        for (const folder of folderNodes) {
-            const orderedChildren = getOrderedFeatureChildren(folder.id);
-            for (let i = 0; i < orderedChildren.length - 1; i++) {
-                expandedEdges.push({ source: orderedChildren[i], target: orderedChildren[i + 1] });
-            }
-        }
-
-        // Cross-folder edges: last child of source folder → first child of target folder
-        for (const edge of edges) {
-            const sourceFolder = folderMap.get(edge.source);
-            const targetFolder = folderMap.get(edge.target);
-
-            if (sourceFolder && targetFolder) {
-                const sourceChildren = getOrderedFeatureChildren(edge.source);
-                const targetChildren = getOrderedFeatureChildren(edge.target);
-                if (sourceChildren.length > 0 && targetChildren.length > 0) {
-                    expandedEdges.push({
-                        source: sourceChildren[sourceChildren.length - 1],
-                        target: targetChildren[0]
-                    });
-                }
-            } else if (featureNodeIds.has(edge.source) && featureNodeIds.has(edge.target)) {
-                // Direct feature-to-feature edge, keep as-is
-                expandedEdges.push(edge);
-            }
-        }
-
-        logCanvas(`expandFolderEdges: ${edges.length} original edges → ${expandedEdges.length} expanded edges`);
-        return expandedEdges;
-    }
-
-    /**
-     * Sort nodes by dependency order (topological sort)
-     */
-    private sortNodesByDependency(nodes: Node[], edges: Array<{ source: string; target: string }>): Node[] {
-        const nodeMap = new Map(nodes.map(n => [n.id, n]));
-        const inDegree = new Map<string, number>();
-        const adjacencyList = new Map<string, string[]>();
-
-        for (const node of nodes) {
-            inDegree.set(node.id, 0);
-            adjacencyList.set(node.id, []);
-        }
-
-        for (const edge of edges) {
-            if (nodeMap.has(edge.source) && nodeMap.has(edge.target)) {
-                adjacencyList.get(edge.source)!.push(edge.target);
-                inDegree.set(edge.target, (inDegree.get(edge.target) || 0) + 1);
-            }
-        }
-
-        const queue: string[] = [];
-        const result: Node[] = [];
-
-        for (const [nodeId, degree] of inDegree) {
-            if (degree === 0) {
-                queue.push(nodeId);
-            }
-        }
-
-        while (queue.length > 0) {
-            const nodeId = queue.shift()!;
-            const node = nodeMap.get(nodeId);
-            if (node) {
-                result.push(node);
-            }
-
-            for (const dependent of adjacencyList.get(nodeId) || []) {
-                const newDegree = (inDegree.get(dependent) || 0) - 1;
-                inDegree.set(dependent, newDegree);
-                if (newDegree === 0) {
-                    queue.push(dependent);
-                }
-            }
-        }
-
-        for (const node of nodes) {
-            if (!result.includes(node)) {
-                result.push(node);
-            }
-        }
-
-        return result;
-    }
 
     /**
      * Start single-node automation for the selected node
@@ -589,7 +468,7 @@ export class NodeAutomationHandlers {
             let folderName: string;
 
             if (currentFolderId) {
-                const descendantIds = this.getDescendantNodeIds(currentFolderId, allNodes);
+                const descendantIds = getDescendantNodeIds(currentFolderId, allNodes);
                 featureNodes = allNodes.filter(n =>
                     n.nodeType !== 'folder' && descendantIds.has(n.id)
                 );
@@ -649,7 +528,8 @@ export class NodeAutomationHandlers {
         concurrency = 1,
         waitForDependencies = false,
         sequentialTests = true,
-        skipPassedScenarios = true
+        skipPassedScenarios = true,
+        batchTestMode = false
     ): Promise<void> {
         try {
             logCanvas(`Starting run-all-nodes automation (modes: ${modes.join(', ')}, concurrency: ${concurrency}, waitDeps: ${waitForDependencies}, skipPassed: ${skipPassedScenarios}, targetFolderId: ${targetFolderId ?? 'none'})`);
@@ -678,7 +558,7 @@ export class NodeAutomationHandlers {
 
             let featureNodes: Node[];
             if (folderId) {
-                const descendantIds = this.getDescendantNodeIds(folderId, allNodes);
+                const descendantIds = getDescendantNodeIds(folderId, allNodes);
                 featureNodes = allNodes.filter(n =>
                     n.nodeType !== 'folder' && descendantIds.has(n.id)
                 );
@@ -703,8 +583,8 @@ export class NodeAutomationHandlers {
             logCanvas('Confirmed, proceeding with automation');
 
             const allEdges = this.storage.loadAllEdges();
-            const expandedEdges = this.expandFolderEdges(featureNodes, allNodes, allEdges);
-            const sortedNodes = this.sortNodesByDependency(featureNodes, expandedEdges);
+            const expandedEdges = expandFolderEdges(featureNodes, allNodes, allEdges);
+            const sortedNodes = sortNodesByDependency(featureNodes, expandedEdges);
 
             logCanvas(`Found ${sortedNodes.length} nodes to process`);
 
@@ -719,7 +599,8 @@ export class NodeAutomationHandlers {
                 modes,
                 concurrency,
                 sequentialTests,
-                skipPassedScenarios ? ['passed'] : []
+                skipPassedScenarios ? ['passed'] : [],
+                batchTestMode
             );
 
             // Auto-skip nodes based on skipStatuses from state file
@@ -769,132 +650,21 @@ export class NodeAutomationHandlers {
 
             stateManager.startAutomation(state);
 
-            // Build dependency map for waitForDependencies mode
-            const dependencyMap = new Map<string, Set<string>>();
-            if (waitForDependencies) {
-                for (const node of sortedNodes) {
-                    dependencyMap.set(node.id, new Set());
-                }
-                for (const edge of expandedEdges) {
-                    if (dependencyMap.has(edge.target)) {
-                        dependencyMap.get(edge.target)!.add(edge.source);
-                    }
-                }
+            // ─── BATCH TEST MODE BRANCH ───
+            if (batchTestMode && modes.includes('run-fix')) {
+                await this.runBatchModeAutomation(
+                    sortedNodes, allNodes, allEdges, modes,
+                    concurrency, waitForDependencies, sequentialTests,
+                    stateManager, state, expandedEdges
+                );
+                return;
             }
 
-            // Parallel sliding window execution
-            const completedNodes = new Set<string>();
-            const runningNodes = new Map<string, Promise<{ nodeId: string; passed: boolean; stopped: boolean }>>();
-            let queueIndex = 0;
-            let automationStopped = false;
+            const automationStopped = await this.runSlidingWindowExecution(
+                sortedNodes, allNodes, expandedEdges, modes,
+                concurrency, waitForDependencies, sequentialTests, stateManager
+            );
 
-            const launchNext = (): boolean => {
-                const currentState = stateManager.loadState();
-                if (!currentState || currentState.status === 'stopped') { return false; }
-
-                const effectiveConcurrency = currentState.executionSettings?.concurrency || concurrency;
-                TestRunner.sequentialMode = currentState.executionSettings?.sequentialTests ?? sequentialTests;
-                while (runningNodes.size < effectiveConcurrency && queueIndex < sortedNodes.length) {
-                    const stateNode = currentState.nodes.find(n => n.id === sortedNodes[queueIndex].id);
-                    const sortedNode = sortedNodes[queueIndex];
-
-                    // Skip already processed nodes
-                    if (!stateNode || stateNode.status !== 'pending') {
-                        queueIndex++;
-                        completedNodes.add(sortedNode.id);
-                        continue;
-                    }
-
-                    // If waitForDependencies, check deps are completed
-                    if (waitForDependencies) {
-                        const deps = dependencyMap.get(sortedNode.id) || new Set();
-                        const depsReady = [...deps].every(depId => completedNodes.has(depId));
-                        if (!depsReady) {
-                            queueIndex++;
-                            continue;
-                        }
-                    }
-
-                    const node = allNodes.find(n => n.id === sortedNode.id);
-                    if (!node) {
-                        stateManager.updateNodeStatus(currentState, sortedNode.id, 'failed', 'Node not found');
-                        completedNodes.add(sortedNode.id);
-                        queueIndex++;
-                        continue;
-                    }
-
-                    // Launch this node
-                    stateManager.updateNodeStatus(currentState, stateNode.id, 'running');
-
-                    const modesToRun: ('bdd' | 'test' | 'run-fix')[] = [];
-                    if (stateNode.modes.bdd) { modesToRun.push('bdd'); }
-                    if (stateNode.modes.test) { modesToRun.push('test'); }
-                    if (stateNode.modes.runFix) { modesToRun.push('run-fix'); }
-
-                    const progressMessage = `Processing ${completedNodes.size + runningNodes.size + 1}/${stateManager.getTotalNodes(currentState)}: ${node.title}`;
-                    logCanvas(progressMessage);
-                    this.webview.postMessage({
-                        command: 'allNodesAutomationStatus',
-                        status: 'running',
-                        totalNodes: stateManager.getTotalNodes(currentState),
-                        currentIndex: completedNodes.size,
-                        currentNodeId: node.id,
-                        currentNodeTitle: node.title,
-                        message: concurrency > 1 ? `[${runningNodes.size + 1} agents] ${progressMessage}` : progressMessage
-                    });
-                    this.notifyProgress({
-                        status: 'running',
-                        totalNodes: stateManager.getTotalNodes(currentState),
-                        currentIndex: completedNodes.size,
-                        currentNodeId: node.id,
-                        currentNodeTitle: node.title,
-                        message: progressMessage
-                    });
-
-                    const promise = this.runSingleNodeAutomationAndWait(node, modesToRun, node.id)
-                        .then(result => ({ nodeId: node.id, ...result }));
-                    runningNodes.set(node.id, promise);
-                    queueIndex++;
-                }
-
-                return true;
-            };
-
-            // Initial launch
-            if (!launchNext()) { automationStopped = true; }
-
-            // Wait for completions and launch more
-            while (runningNodes.size > 0 && !automationStopped) {
-                const result = await Promise.race([...runningNodes.values()]);
-                runningNodes.delete(result.nodeId);
-
-                if (result.stopped) {
-                    // Stop all running orchestrators
-                    for (const [id] of runningNodes) {
-                        const orch = this.orchestrators.get(id);
-                        if (orch?.isRunning()) { orch.stop(); }
-                        const wp = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-                        if (wp) { CLIAgentLauncher.getInstance(wp).killTerminal(id); }
-                    }
-                    const currentState = stateManager.loadState();
-                    if (currentState) { stateManager.stopAutomation(currentState); }
-                    automationStopped = true;
-                    break;
-                }
-
-                const currentState = stateManager.loadState();
-                if (currentState) {
-                    stateManager.updateNodeStatus(currentState, result.nodeId, result.passed ? 'passed' : 'failed');
-                }
-                completedNodes.add(result.nodeId);
-
-                // Try to launch more - when waiting for dependencies, rescan from start
-                // since completed nodes may have unblocked previously-skipped nodes
-                if (waitForDependencies) { queueIndex = 0; }
-                if (!launchNext()) { automationStopped = true; }
-            }
-
-            // Check if all nodes are processed (not stopped)
             if (!automationStopped) {
                 const currentState = stateManager.loadState();
                 if (currentState && !stateManager.getNextNode(currentState)) {
@@ -902,58 +672,13 @@ export class NodeAutomationHandlers {
                 }
             }
 
-            // Reset sequential test mode when automation ends
             TestRunner.sequentialMode = false;
-
-            // Final state
-            const finalState = stateManager.loadState();
-            if (finalState) {
-                const completedMessage = stateManager.getSkippedCount(finalState) > 0
-                    ? `Completed: ${stateManager.getPassedCount(finalState)}/${stateManager.getCompletedCount(finalState)} passed (${stateManager.getSkippedCount(finalState)} skipped)`
-                    : `Completed: ${stateManager.getPassedCount(finalState)}/${stateManager.getCompletedCount(finalState)} passed`;
-
-                logCanvas(`All-nodes automation complete: ${stateManager.getPassedCount(finalState)}/${stateManager.getCompletedCount(finalState)} passed${stateManager.getSkippedCount(finalState) > 0 ? ` (${stateManager.getSkippedCount(finalState)} skipped)` : ''}`);
-
-                this.webview.postMessage({
-                    command: 'allNodesAutomationStatus',
-                    status: 'completed',
-                    totalNodes: stateManager.getTotalNodes(finalState),
-                    completedCount: stateManager.getCompletedCount(finalState),
-                    passedCount: stateManager.getPassedCount(finalState),
-                    skippedCount: stateManager.getSkippedCount(finalState),
-                    message: completedMessage
-                });
-                this.notifyProgress({
-                    status: 'completed',
-                    totalNodes: stateManager.getTotalNodes(finalState),
-                    completedCount: stateManager.getCompletedCount(finalState),
-                    passedCount: stateManager.getPassedCount(finalState),
-                    skippedCount: stateManager.getSkippedCount(finalState),
-                    message: completedMessage
-                });
-
-                if (stateManager.getPassedCount(finalState) === stateManager.getCompletedCount(finalState)) {
-                    const skipMsg = stateManager.getSkippedCount(finalState) > 0 ? ` (${stateManager.getSkippedCount(finalState)} skipped)` : '';
-                    vscode.window.showInformationMessage(`✅ All ${stateManager.getCompletedCount(finalState)} nodes in this folder passed!${skipMsg}`);
-                } else {
-                    const skipMsg = stateManager.getSkippedCount(finalState) > 0 ? ` (${stateManager.getSkippedCount(finalState)} skipped)` : '';
-                    vscode.window.showWarningMessage(`Folder automation complete: ${stateManager.getPassedCount(finalState)}/${stateManager.getCompletedCount(finalState)} passed${skipMsg}`);
-                }
-            }
+            this.emitFinalStatus(stateManager);
 
         } catch (error) {
             logError('CANVAS', 'Failed to run all-nodes automation', error);
             vscode.window.showErrorMessage(`Automation failed: ${error}`);
-            const errorMessage = `Error: ${error}`;
-            this.webview.postMessage({
-                command: 'allNodesAutomationStatus',
-                status: 'error',
-                message: errorMessage
-            });
-            this.notifyProgress({
-                status: 'error',
-                message: errorMessage
-            });
+            this.emitErrorStatus(`Error: ${error}`);
         }
     }
 
@@ -1118,6 +843,302 @@ export class NodeAutomationHandlers {
     }
 
     /**
+     * Handle batch AGENT_DONE signal - delegates to BatchTestExecutionHandler
+     */
+    handleBatchAgentDone(): boolean {
+        return this.batchHandler.handleBatchAgentDone();
+    }
+
+    /**
+     * Batch mode: Phase 1 = BDD+test gen (parallel), Phase 2 = batch test+fix loop
+     */
+    private async runBatchModeAutomation(
+        sortedNodes: Node[],
+        allNodes: Node[],
+        allEdges: Array<{ source: string; target: string }>,
+        modes: ('bdd' | 'test' | 'run-fix')[],
+        concurrency: number,
+        waitForDependencies: boolean,
+        sequentialTests: boolean,
+        stateManager: AutomationStateManager,
+        state: any,
+        expandedEdges: Array<{ source: string; target: string }>
+    ): Promise<void> {
+        try {
+            // ── Phase 1: BDD + Test Generation (parallel, existing sliding window) ──
+            const phase1Modes = modes.filter(m => m !== 'run-fix') as ('bdd' | 'test' | 'run-fix')[];
+
+            if (phase1Modes.length > 0) {
+                logCanvas(`[BatchMode] Phase 1: Running BDD+test gen for ${sortedNodes.length} nodes (modes: ${phase1Modes.join(', ')})`);
+                this.webview.postMessage({
+                    command: 'allNodesAutomationStatus',
+                    status: 'running',
+                    message: `Phase 1: Generating BDD plans and tests for ${sortedNodes.length} features...`
+                });
+                this.notifyProgress({
+                    status: 'running',
+                    message: `Phase 1: Generating BDD plans and tests for ${sortedNodes.length} features...`
+                });
+
+                const automationStopped = await this.runSlidingWindowExecution(
+                    sortedNodes, allNodes, expandedEdges, phase1Modes,
+                    concurrency, waitForDependencies, sequentialTests,
+                    stateManager, 'Phase 1: '
+                );
+
+                if (automationStopped) {
+                    TestRunner.sequentialMode = false;
+                    this.emitFinalStatus(stateManager);
+                    return;
+                }
+
+                logCanvas('[BatchMode] Phase 1 complete');
+            }
+
+            // ── Phase 2: Batch Test + Fix Loop ──
+            logCanvas(`[BatchMode] Phase 2: Starting batch test+fix loop`);
+            this.webview.postMessage({
+                command: 'allNodesAutomationStatus',
+                status: 'running',
+                message: `Phase 2: Running batch tests for all features...`
+            });
+            this.notifyProgress({
+                status: 'running',
+                message: `Phase 2: Running batch tests for all features...`
+            });
+
+            // Get non-skipped nodes for batch testing
+            const currentState = stateManager.loadState();
+            const nodesToTest = sortedNodes.filter(n => {
+                const stateNode = currentState?.nodes.find(sn => sn.id === n.id);
+                return stateNode && stateNode.status !== 'skipped';
+            });
+
+            // Reset node statuses to pending for the test phase
+            if (currentState) {
+                for (const node of nodesToTest) {
+                    stateManager.updateNodeStatus(currentState, node.id, 'running');
+                }
+            }
+
+            const maxRetries = currentState?.retryConfig?.maxRetries ?? 10;
+            const batchResults = await this.batchHandler.runBatchTestFixLoop(
+                nodesToTest,
+                allNodes,
+                allEdges,
+                maxRetries,
+                stateManager,
+                state,
+                (update) => this.notifyProgress(update)
+            );
+
+            // Update final statuses
+            for (const [nodeId, passed] of batchResults) {
+                const node = this.nodeManager.getNodeById(nodeId);
+                if (node) {
+                    const status: NodeStatus = passed ? 'passed' : 'failed';
+                    this.nodeStatusService.setStatusByNode(node, status, {
+                        saveNow: true,
+                        reason: `batch-mode final status: ${status}`
+                    });
+
+                    this.webview.postMessage({
+                        command: 'singleNodeAutomationComplete',
+                        nodeId,
+                        passed,
+                        nodeStatus: status,
+                        completionKind: 'run-fix',
+                        testsExecuted: true
+                    });
+                }
+            }
+
+            TestRunner.sequentialMode = false;
+
+            // Complete automation
+            const finalState = stateManager.loadState();
+            if (finalState) {
+                stateManager.completeAutomation(finalState);
+            }
+
+            this.emitFinalStatus(stateManager);
+
+        } catch (error) {
+            logError('CANVAS', 'Batch mode automation failed', error);
+            TestRunner.sequentialMode = false;
+            vscode.window.showErrorMessage(`Batch automation failed: ${error}`);
+            this.emitErrorStatus(`Error: ${error}`);
+        }
+    }
+
+    /**
+     * Shared sliding window execution used by both normal and batch-mode Phase 1.
+     * Returns true if automation was stopped, false otherwise.
+     */
+    private async runSlidingWindowExecution(
+        sortedNodes: Node[],
+        allNodes: Node[],
+        expandedEdges: Array<{ source: string; target: string }>,
+        modes: ('bdd' | 'test' | 'run-fix')[],
+        concurrency: number,
+        waitForDependencies: boolean,
+        sequentialTests: boolean,
+        stateManager: AutomationStateManager,
+        progressPrefix = ''
+    ): Promise<boolean> {
+        const dependencyMap = new Map<string, Set<string>>();
+        if (waitForDependencies) {
+            for (const node of sortedNodes) {
+                dependencyMap.set(node.id, new Set());
+            }
+            for (const edge of expandedEdges) {
+                if (dependencyMap.has(edge.target)) {
+                    dependencyMap.get(edge.target)!.add(edge.source);
+                }
+            }
+        }
+
+        const completedNodes = new Set<string>();
+        const runningNodes = new Map<string, Promise<{ nodeId: string; passed: boolean; stopped: boolean }>>();
+        let queueIndex = 0;
+        let automationStopped = false;
+
+        const launchNext = (): boolean => {
+            const currentState = stateManager.loadState();
+            if (!currentState || currentState.status === 'stopped') { return false; }
+
+            const effectiveConcurrency = currentState.executionSettings?.concurrency || concurrency;
+            TestRunner.sequentialMode = currentState.executionSettings?.sequentialTests ?? sequentialTests;
+            while (runningNodes.size < effectiveConcurrency && queueIndex < sortedNodes.length) {
+                const stateNode = currentState.nodes.find(n => n.id === sortedNodes[queueIndex].id);
+                const sortedNode = sortedNodes[queueIndex];
+
+                if (!stateNode || stateNode.status !== 'pending') {
+                    queueIndex++;
+                    completedNodes.add(sortedNode.id);
+                    continue;
+                }
+
+                if (waitForDependencies) {
+                    const deps = dependencyMap.get(sortedNode.id) || new Set();
+                    const depsReady = [...deps].every(depId => completedNodes.has(depId));
+                    if (!depsReady) {
+                        queueIndex++;
+                        continue;
+                    }
+                }
+
+                const node = allNodes.find(n => n.id === sortedNode.id);
+                if (!node) {
+                    stateManager.updateNodeStatus(currentState, sortedNode.id, 'failed', 'Node not found');
+                    completedNodes.add(sortedNode.id);
+                    queueIndex++;
+                    continue;
+                }
+
+                stateManager.updateNodeStatus(currentState, stateNode.id, 'running');
+
+                const progressMessage = `${progressPrefix}${completedNodes.size + runningNodes.size + 1}/${sortedNodes.length}: ${node.title}`;
+                this.webview.postMessage({
+                    command: 'allNodesAutomationStatus',
+                    status: 'running',
+                    message: progressMessage
+                });
+                this.notifyProgress({ status: 'running', message: progressMessage });
+
+                const promise = this.runSingleNodeAutomationAndWait(node, modes, node.id)
+                    .then(result => ({ nodeId: node.id, ...result }));
+                runningNodes.set(node.id, promise);
+                queueIndex++;
+            }
+            return true;
+        };
+
+        if (!launchNext()) { automationStopped = true; }
+
+        while (runningNodes.size > 0 && !automationStopped) {
+            const result = await Promise.race([...runningNodes.values()]);
+            runningNodes.delete(result.nodeId);
+
+            if (result.stopped) {
+                for (const [id] of runningNodes) {
+                    const orch = this.orchestrators.get(id);
+                    if (orch?.isRunning()) { orch.stop(); }
+                    const wp = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+                    if (wp) { CLIAgentLauncher.getInstance(wp).killTerminal(id); }
+                }
+                const currentState = stateManager.loadState();
+                if (currentState) { stateManager.stopAutomation(currentState); }
+                automationStopped = true;
+                break;
+            }
+
+            const currentState = stateManager.loadState();
+            if (currentState) {
+                stateManager.updateNodeStatus(currentState, result.nodeId, result.passed ? 'passed' : 'failed');
+            }
+            completedNodes.add(result.nodeId);
+
+            if (waitForDependencies) { queueIndex = 0; }
+            if (!launchNext()) { automationStopped = true; }
+        }
+
+        return automationStopped;
+    }
+
+    /**
+     * Emit error status to webview and progress callback
+     */
+    private emitErrorStatus(message: string): void {
+        this.webview.postMessage({
+            command: 'allNodesAutomationStatus',
+            status: 'error',
+            message
+        });
+        this.notifyProgress({ status: 'error', message });
+    }
+
+    /**
+     * Emit final automation status from state manager
+     */
+    private emitFinalStatus(stateManager: AutomationStateManager): void {
+        const finalState = stateManager.loadState();
+        if (!finalState) { return; }
+
+        const completedMessage = stateManager.getSkippedCount(finalState) > 0
+            ? `Completed: ${stateManager.getPassedCount(finalState)}/${stateManager.getCompletedCount(finalState)} passed (${stateManager.getSkippedCount(finalState)} skipped)`
+            : `Completed: ${stateManager.getPassedCount(finalState)}/${stateManager.getCompletedCount(finalState)} passed`;
+
+        logCanvas(`All-nodes automation complete: ${completedMessage}`);
+
+        this.webview.postMessage({
+            command: 'allNodesAutomationStatus',
+            status: 'completed',
+            totalNodes: stateManager.getTotalNodes(finalState),
+            completedCount: stateManager.getCompletedCount(finalState),
+            passedCount: stateManager.getPassedCount(finalState),
+            skippedCount: stateManager.getSkippedCount(finalState),
+            message: completedMessage
+        });
+        this.notifyProgress({
+            status: 'completed',
+            totalNodes: stateManager.getTotalNodes(finalState),
+            completedCount: stateManager.getCompletedCount(finalState),
+            passedCount: stateManager.getPassedCount(finalState),
+            skippedCount: stateManager.getSkippedCount(finalState),
+            message: completedMessage
+        });
+
+        if (stateManager.getPassedCount(finalState) === stateManager.getCompletedCount(finalState)) {
+            const skipMsg = stateManager.getSkippedCount(finalState) > 0 ? ` (${stateManager.getSkippedCount(finalState)} skipped)` : '';
+            vscode.window.showInformationMessage(`✅ All ${stateManager.getCompletedCount(finalState)} nodes passed!${skipMsg}`);
+        } else {
+            const skipMsg = stateManager.getSkippedCount(finalState) > 0 ? ` (${stateManager.getSkippedCount(finalState)} skipped)` : '';
+            vscode.window.showWarningMessage(`Automation complete: ${stateManager.getPassedCount(finalState)}/${stateManager.getCompletedCount(finalState)} passed${skipMsg}`);
+        }
+    }
+
+    /**
      * Stop all-nodes automation (stops all running orchestrators and terminals)
      */
     handleStopAllNodesAutomation(): void {
@@ -1126,6 +1147,9 @@ export class NodeAutomationHandlers {
 
         // Cancel any running test processes first
         this.testExecutionHandlers.cancelCurrentTest();
+
+        // Cancel batch mode if running
+        this.batchHandler.cancelBatch();
 
         let stoppedCount = 0;
         for (const [id, orchestrator] of this.orchestrators) {
@@ -1137,7 +1161,7 @@ export class NodeAutomationHandlers {
             }
         }
 
-        // Also kill any remaining terminals
+        // Also kill any remaining terminals (including batch terminal)
         launcher?.killTerminal();
 
         if (stoppedCount > 0) {

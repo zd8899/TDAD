@@ -243,25 +243,52 @@
   flex-direction: column;
 }
 
-.autopilot-concurrency-options {
-  min-height: 76px;
-  margin-top: 6px;
+/* Unified Options Section */
+.autopilot-options-section {
+  margin-bottom: 20px;
+}
+
+.autopilot-options-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #777777;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  text-align: left;
+}
+
+.autopilot-options-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  visibility: hidden;
-  opacity: 0;
-  pointer-events: none;
+  gap: 4px;
 }
 
-.autopilot-concurrency-options--visible {
-  visibility: visible;
-  opacity: 1;
-  pointer-events: auto;
+.autopilot-option-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #666666;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.03);
+  transition: all 0.2s ease;
+  min-height: 32px;
+  box-sizing: border-box;
 }
 
-.autopilot-concurrency-option {
-  margin-top: 0 !important;
+.autopilot-option-item:hover {
+  background: rgba(139, 92, 246, 0.08);
+}
+
+.autopilot-option-item input[type="checkbox"] {
+  accent-color: #8b5cf6;
+  cursor: pointer;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
 }
 
 .autopilot-retries-label {
@@ -299,10 +326,9 @@
 
 /* CLI Selector */
 .autopilot-cli-selector {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
 }
 
 .autopilot-cli-label {
@@ -338,24 +364,3 @@
   border-color: rgba(139, 92, 246, 0.5);
 }
 
-.autopilot-skip-permissions-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: #666666;
-  cursor: pointer;
-  padding: 6px 10px;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.03);
-  transition: all 0.2s ease;
-}
-
-.autopilot-skip-permissions-label:hover {
-  background: rgba(139, 92, 246, 0.08);
-}
-
-.autopilot-skip-permissions-label input[type="checkbox"] {
-  accent-color: #8b5cf6;
-  cursor: pointer;
-}

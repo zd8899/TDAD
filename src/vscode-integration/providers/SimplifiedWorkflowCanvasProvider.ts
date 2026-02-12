@@ -692,7 +692,8 @@ export class SimplifiedWorkflowCanvasProvider {
                                 message.concurrency || 1,
                                 message.waitForDependencies || false,
                                 message.sequentialTests ?? true,
-                                message.skipPassedScenarios ?? true
+                                message.skipPassedScenarios ?? true,
+                                message.batchTestMode || false
                             );
                             break;
                         }
@@ -896,6 +897,10 @@ export class SimplifiedWorkflowCanvasProvider {
      */
     public async handlePerNodeAgentDone(nodeId: string): Promise<boolean> {
         return await this._testWorkflowHandlers.handlePerNodeAgentDone(nodeId);
+    }
+
+    public async handleBatchAgentDone(): Promise<boolean> {
+        return await this._testWorkflowHandlers.handleBatchAgentDone();
     }
 
     /**

@@ -394,54 +394,7 @@ export class TestRunner implements ITestRunner {
 
             let jsonResult;
             try {
-                // With mixed stdout (globalSetup logs + JSON), parse the final valid JSON payload.
-                const extractPlaywrightJson = (output: string): any => {
-                    const trimmed = output.trim();
-                    if (!trimmed) {
-                        throw new Error('Empty Playwright output');
-                    }
-
-                    // Fast path: pure JSON payload.
-                    try {
-                        return JSON.parse(trimmed);
-                    } catch {
-                        // Continue with mixed-output recovery.
-                    }
-
-                    const jsonEnd = output.lastIndexOf('}');
-                    if (jsonEnd === -1) {
-                        throw new Error('Could not find JSON end token in output');
-                    }
-
-                    // Try parsing from each object start, searching backward from the end.
-                    // This tolerates leading logs and random object-like text before reporter JSON.
-                    const startCandidates: number[] = [];
-                    for (let i = 0; i < jsonEnd; i++) {
-                        if (output[i] === '{') {
-                            startCandidates.push(i);
-                        }
-                    }
-
-                    for (let i = startCandidates.length - 1; i >= 0; i--) {
-                        const start = startCandidates[i];
-                        const candidate = output.substring(start, jsonEnd + 1).trim();
-                        if (!candidate.startsWith('{')) {
-                            continue;
-                        }
-                        try {
-                            const parsed = JSON.parse(candidate);
-                            if (parsed && typeof parsed === 'object' && Array.isArray(parsed.suites) && parsed.stats) {
-                                return parsed;
-                            }
-                        } catch {
-                            // Try next candidate
-                        }
-                    }
-
-                    throw new Error('Could not extract valid Playwright JSON payload from mixed output');
-                };
-
-                jsonResult = extractPlaywrightJson(execResult.stdout);
+                jsonResult = TestRunner.extractPlaywrightJson(execResult.stdout);
             } catch (parseError) {
                 if (this.isCancellationRequested(runToken) || this.cancelRequested) {
                     return this.createCanceledExecutionResult(Date.now() - startTime);
@@ -532,33 +485,8 @@ export class TestRunner implements ITestRunner {
                 };
             }
 
-            // Playwright JSON format can have multiple nesting levels:
-            // - File level: suites[0]
-            // - Outer describe: suites[0].suites[0]
-            // - Inner describe (features): suites[0].suites[0].suites[x]
-            // - Specs: suites[0].suites[0].suites[x].specs
             const topLevelSuites = jsonResult.suites || [];
-            const specs: any[] = [];
-
-            // Recursively extract all specs from nested suites
-            const extractSpecs = (suite: any): void => {
-                // Add specs directly on this suite
-                if (suite.specs && suite.specs.length > 0) {
-                    specs.push(...suite.specs);
-                }
-                // Recurse into nested suites
-                if (suite.suites && suite.suites.length > 0) {
-                    for (const nestedSuite of suite.suites) {
-                        extractSpecs(nestedSuite);
-                    }
-                }
-            };
-
-            // Start extraction from top-level suites
-            for (const fileSuite of topLevelSuites) {
-                extractSpecs(fileSuite);
-            }
-
+            const specs = TestRunner.extractSpecsFromSuites(topLevelSuites);
             const tests = specs.flatMap((spec: any) => spec.tests || []);
 
             this.outputChannel.appendLine(`\n📊 Playwright returned ${tests.length} test results`);
@@ -846,6 +774,52 @@ export class TestRunner implements ITestRunner {
     }
 
     /**
+     * Parse Playwright JSON reporter output from mixed stdout (may contain globalSetup logs)
+     */
+    private static extractPlaywrightJson(output: string): any {
+        const trimmed = output.trim();
+        if (!trimmed) { throw new Error('Empty Playwright output'); }
+
+        try { return JSON.parse(trimmed); } catch { /* mixed output recovery */ }
+
+        const jsonEnd = output.lastIndexOf('}');
+        if (jsonEnd === -1) { throw new Error('Could not find JSON end token in output'); }
+
+        const startCandidates: number[] = [];
+        for (let i = 0; i < jsonEnd; i++) {
+            if (output[i] === '{') { startCandidates.push(i); }
+        }
+
+        for (let i = startCandidates.length - 1; i >= 0; i--) {
+            const candidate = output.substring(startCandidates[i], jsonEnd + 1).trim();
+            if (!candidate.startsWith('{')) { continue; }
+            try {
+                const parsed = JSON.parse(candidate);
+                if (parsed && typeof parsed === 'object' && Array.isArray(parsed.suites) && parsed.stats) {
+                    return parsed;
+                }
+            } catch { /* try next */ }
+        }
+
+        throw new Error('Could not extract valid Playwright JSON payload from mixed output');
+    }
+
+    /**
+     * Recursively extract all specs from nested Playwright suites
+     */
+    private static extractSpecsFromSuites(suites: any[]): any[] {
+        const specs: any[] = [];
+        const walk = (suite: any): void => {
+            if (suite.specs?.length > 0) { specs.push(...suite.specs); }
+            if (suite.suites?.length > 0) {
+                for (const nested of suite.suites) { walk(nested); }
+            }
+        };
+        for (const suite of suites) { walk(suite); }
+        return specs;
+    }
+
+    /**
      * Clean up Playwright test output for better readability
      * - Remove redundant folder name from file name (e.g., expose-scenario-crud-endpoints/expose-scenario-crud-endpoints.test.js -> expose-scenario-crud-endpoints.test.js)
      * - Remove column number from line reference (e.g., :933:3 -> :933)
@@ -1057,6 +1031,201 @@ export class TestRunner implements ITestRunner {
             results.forEach(result => {
                 result.coverageData = coverageData;
             });
+        }
+    }
+
+    /**
+     * Run ALL test files in a single Playwright command.
+     * Used by batch test mode to discover all tests via testDir config.
+     * Returns a Map of nodeId -> TestResult[] by matching suite.file to node test paths.
+     */
+    public async runBatchTests(
+        nodes: Node[],
+        workspacePath: string
+    ): Promise<Map<string, TestResult[]>> {
+        const runToken = TestRunner.cancellationVersion;
+        const resultMap = new Map<string, TestResult[]>();
+
+        this.outputChannel.clear();
+        this.outputChannel.show();
+        this.outputChannel.appendLine(`${'='.repeat(60)}`);
+        this.outputChannel.appendLine(`Running BATCH tests for ${nodes.length} nodes`);
+        this.outputChannel.appendLine(`${'='.repeat(60)}\n`);
+
+        // Pre-flight: ensure config, fixtures, coverage cleanup
+        this.ensurePlaywrightPrerequisites(workspacePath);
+
+        if (this.isCancellationRequested(runToken)) {
+            return resultMap;
+        }
+
+        // Build node lookup: relative test file path -> node
+        const nodeByTestPath = new Map<string, Node>();
+        for (const node of nodes) {
+            const testFile = await this.findAutomatedTestFile(node);
+            if (testFile) {
+                const rel = path.relative(workspacePath, testFile).replace(/\\/g, '/');
+                nodeByTestPath.set(rel, node);
+            }
+        }
+
+        // Run single Playwright command filtered to the folder(s) containing these nodes
+        // Don't quote paths - causes issues with cmd.exe on Windows (same as per-node runner)
+        const tdadConfigPath = '.tdad/playwright.config.js';
+        const folderFilters = [...new Set(nodes.map(n => `.tdad/workflows/${getWorkflowFolderName(n.workflowId)}`))];
+        const command = folderFilters.length > 0
+            ? `npx playwright test ${folderFilters.join(' ')} --config=${tdadConfigPath} --reporter=list,json`
+            : `npx playwright test --config=${tdadConfigPath} --reporter=list,json`;
+
+        this.outputChannel.appendLine(`🔍 Batch command: ${command}`);
+        this.outputChannel.appendLine(`🔍 Working directory: ${workspacePath}\n`);
+
+        const execResult = await this.executeCommandWithTimeout(command, workspacePath);
+
+        if (this.isCancellationRequested(runToken) || this.cancelRequested) {
+            return resultMap;
+        }
+
+        this.outputChannel.appendLine(`\n📤 Exit code: ${execResult.exitCode}`);
+
+        // Parse JSON output
+        let jsonResult: any;
+        try {
+            jsonResult = TestRunner.extractPlaywrightJson(execResult.stdout);
+        } catch (parseError) {
+            this.outputChannel.appendLine(`\n❌ Failed to parse batch Playwright JSON output: ${parseError}`);
+            // Return synthetic error for all nodes
+            for (const node of nodes) {
+                resultMap.set(node.id, [{
+                    test: {
+                        id: 'batch-startup-error',
+                        featureId: node.id,
+                        title: 'Batch Playwright Startup Error',
+                        description: 'Playwright failed to start in batch mode',
+                        input: {},
+                        expectedResult: {}
+                    },
+                    passed: false,
+                    error: `Batch Playwright failed to start.\nSTDOUT: ${execResult.stdout.substring(0, 500)}\nSTDERR: ${execResult.stderr.substring(0, 500)}`
+                }]);
+            }
+            return resultMap;
+        }
+
+        // Map results back to nodes via top-level suite.file field
+        const topLevelSuites = jsonResult.suites || [];
+        for (const fileSuite of topLevelSuites) {
+            const suiteFile = (fileSuite.file || '').replace(/\\/g, '/');
+            // Find the node whose test file matches this suite
+            let matchedNode: Node | undefined;
+            for (const [relPath, node] of nodeByTestPath) {
+                if (suiteFile.endsWith(relPath) || relPath.endsWith(suiteFile) || suiteFile === relPath) {
+                    matchedNode = node;
+                    break;
+                }
+            }
+            if (!matchedNode) {
+                this.outputChannel.appendLine(`⚠️ Could not match suite file to node: ${suiteFile}`);
+                continue;
+            }
+
+            const specs = TestRunner.extractSpecsFromSuites([fileSuite]);
+
+            const tests = specs.flatMap((spec: any) => spec.tests || []);
+            const nodeResults: TestResult[] = [];
+
+            for (let i = 0; i < tests.length; i++) {
+                const playwrightTest = tests[i];
+                const spec = specs.find(s => s.tests?.includes(playwrightTest));
+                const passed = playwrightTest?.results?.[0]?.status === 'passed';
+                const testTitle = spec?.title || `Test ${i + 1}`;
+
+                let error: string | undefined;
+                let fullError: string | undefined;
+
+                if (playwrightTest && !passed) {
+                    const testResult = playwrightTest.results?.[0];
+                    if (testResult?.error) {
+                        const rawMessage = stripAnsi(testResult.error.message || 'Test failed');
+                        const rawStack = stripAnsi(testResult.error.stack || '');
+                        error = rawMessage;
+                        fullError = rawMessage + '\n' + rawStack;
+                    }
+                }
+
+                nodeResults.push({
+                    test: {
+                        id: `batch-test-${i}`,
+                        featureId: matchedNode.id,
+                        title: testTitle,
+                        description: testTitle,
+                        input: {},
+                        expectedResult: {}
+                    },
+                    passed,
+                    error,
+                    fullError
+                });
+            }
+
+            resultMap.set(matchedNode.id, nodeResults);
+            const passedCount = nodeResults.filter(r => r.passed).length;
+            this.outputChannel.appendLine(`📊 ${matchedNode.title}: ${passedCount}/${nodeResults.length} passed`);
+        }
+
+        // For nodes not found in results, add empty results
+        for (const node of nodes) {
+            if (!resultMap.has(node.id)) {
+                resultMap.set(node.id, []);
+            }
+        }
+
+        return resultMap;
+    }
+
+    /**
+     * Shared pre-flight setup: fixtures, config bundle, coverage cleanup
+     */
+    private ensurePlaywrightPrerequisites(workspacePath: string): void {
+        const scaffoldingService = new ScaffoldingService();
+        scaffoldingService.ensureFixturesFile(workspacePath);
+        scaffoldingService.ensurePlaywrightGlobalLockFile(workspacePath);
+
+        const tdadConfigFile = path.join(workspacePath, '.tdad', 'playwright.config.js');
+        const tdadGeneratedConfigFile = path.join(workspacePath, '.tdad', 'playwright.generated.js');
+        const tdadUserConfigFile = path.join(workspacePath, '.tdad', 'playwright.user.js');
+        const config = vscode.workspace.getConfiguration('tdad');
+        const urls = config.get<Record<string, string>>('test.urls', { ui: 'http://localhost:5173' });
+        const workers = config.get<number>('test.workers', 1);
+
+        let shouldRegenerateConfig = false;
+        if (!fs.existsSync(tdadConfigFile) || !fs.existsSync(tdadGeneratedConfigFile) || !fs.existsSync(tdadUserConfigFile)) {
+            shouldRegenerateConfig = true;
+        } else {
+            try {
+                const currentConfig = fs.readFileSync(tdadConfigFile, 'utf-8');
+                if (!currentConfig.includes('TDAD_WRAPPER_CONFIG_V2')) {
+                    shouldRegenerateConfig = true;
+                }
+            } catch {
+                shouldRegenerateConfig = true;
+            }
+        }
+
+        if (shouldRegenerateConfig) {
+            scaffoldingService.scaffoldPlaywrightConfig(workspacePath, urls, workers);
+            this.outputChannel.appendLine(`TDAD Playwright config bundle created/updated`);
+        }
+
+        // Clear previous coverage data
+        const coverageDir = path.join(workspacePath, '.tdad', 'coverage');
+        if (fs.existsSync(coverageDir)) {
+            const files = fs.readdirSync(coverageDir);
+            for (const file of files) {
+                if (file === 'coverage.json' || file.startsWith('coverage-worker-')) {
+                    fs.unlinkSync(path.join(coverageDir, file));
+                }
+            }
         }
     }
 

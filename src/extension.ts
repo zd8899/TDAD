@@ -611,6 +611,17 @@ export function activate(context: vscode.ExtensionContext) {
                 return;
             }
 
+            // Route batch AGENT_DONE to batch handler
+            if (nodeId === 'batch') {
+                const handled = await panel.handleBatchAgentDone();
+                if (handled) {
+                    logExtension(`Batch agent done (${eventType}) processed: ${filePath}`);
+                } else {
+                    logExtension(`Batch agent done (${eventType}) ignored (no pending batch): ${filePath}`);
+                }
+                return;
+            }
+
             const handled = await panel.handlePerNodeAgentDone(nodeId);
             if (!handled) {
                 logExtension(`Per-node agent done (${eventType}) ignored for ${nodeId} (no matching running orchestrator): ${filePath}`);

@@ -1,6 +1,8 @@
+{{#if singleNodeMode}}
 # SYSTEM RULES: FIX MODE
 You are a Test Driven Development Agent. Align **Application Code** with **BDD Specification** and **Tests**.
 
+{{/if}}
 
 # 🎯 TDAD Context Packet: "{{featureName}}"
 
@@ -10,6 +12,7 @@ You are a Test Driven Development Agent. Align **Application Code** with **BDD S
 
 {{/if}}
 
+{{#if singleNodeMode}}
 ## Rules
 
 **0. READ SPECS FIRST:** Read `.feature` → Read `.test.js` → Note expected values BEFORE looking at failures.
@@ -55,6 +58,7 @@ TDAD has scaffolded the files for this feature with correct imports and structur
 Your task is to **fill in the implementation** in the scaffolded files to make the test pass.
 
 ---
+{{/if}}
 
 ## 📂 Scaffolded Files
 Read these files to understand the current implementation:
@@ -63,6 +67,7 @@ Read these files to understand the current implementation:
 - **Action File:** `{{actionFile}}`
 - **Test File:** `{{testFile}}`
 
+{{#if singleNodeMode}}
 {{#if projectContext}}
 ---
 
@@ -71,6 +76,7 @@ Read these files to understand the current implementation:
 
 **Tests run via:** `npx playwright test <relative-path-to-test-file> --config=.tdad/playwright.config.js --reporter=list,json`
 **Custom Playwright overrides:** `.tdad/playwright.user.js` (do not edit generated config files)
+{{/if}}
 {{/if}}
 
 {{#if dependenciesContext}}
@@ -85,6 +91,7 @@ This feature depends on the following upstream features. Call their action funct
 **IMPORTANT:** Do NOT re-implement dependency logic. Import and call upstream action functions directly.
 {{/if}}
 
+{{#if singleNodeMode}}
 {{#if documentationContext}}
 ---
 
@@ -95,6 +102,7 @@ Read these files for API contracts and business rules:
 {{documentationContext}}
 
 **IMPORTANT:** Use the EXACT API endpoints, request/response formats, and validation rules from the documentation.
+{{/if}}
 {{/if}}
 
 {{#if previousAttemptsContext}}
@@ -132,6 +140,7 @@ Check the **trace file** listed above for complete request/response data.
 3. **Fix the APP** to match spec/test expectations
 4. **Verify** no red flags before submitting
 
+{{#if singleNodeMode}}
 ---
 
 ## Checklist
@@ -171,4 +180,5 @@ WHAT SHOULD HAPPEN: Form should show "Invalid email" error and prevent submissio
 ```
 
 This detailed info helps TDAD track what was tried. If tests still fail, the next attempt will see exactly what didn't work and try a different approach.
+{{/if}}
 {{/if}}

@@ -90,7 +90,8 @@ export class GoldenPacketAssembler {
         allNodes?: Node[],
         edges?: Edge[],
         previousAttempts?: FixAttemptInfo[],
-        isAutomated = false
+        isAutomated = false,
+        batchMode = false
     ): Promise<string> {
         try {
             logger.log('GOLDEN-PACKET', `Assembling golden packet for node: ${node.title}`);
@@ -136,7 +137,8 @@ export class GoldenPacketAssembler {
                 featureFile,
                 actionFile,
                 testFile,
-                isAutomated
+                isAutomated,
+                singleNodeMode: !batchMode
             });
 
             logger.log('GOLDEN-PACKET', 'Golden packet assembled successfully');
@@ -165,7 +167,8 @@ export class GoldenPacketAssembler {
         allNodes?: Node[],
         edges?: Edge[],
         previousAttempts?: FixAttemptInfo[],
-        isAutomated = false
+        isAutomated = false,
+        batchMode = false
     ): Promise<string> {
         // Assemble the golden packet (this also saves trace JSON files)
         const goldenPacket = await this.assembleGoldenPacket(
@@ -175,7 +178,8 @@ export class GoldenPacketAssembler {
             allNodes,
             edges,
             previousAttempts,
-            isAutomated
+            isAutomated,
+            batchMode
         );
 
         // Save the golden packet markdown to .tdad/debug/golden-packet.md
@@ -198,7 +202,7 @@ export class GoldenPacketAssembler {
     /**
      * Get project context from package.json
      */
-    private static async getProjectContext(workspacePath: string): Promise<string> {
+    public static async getProjectContext(workspacePath: string): Promise<string> {
         try {
             const packageJsonPath = path.join(workspacePath, 'package.json');
             if (!fs.existsSync(packageJsonPath)) {
@@ -305,7 +309,7 @@ export class GoldenPacketAssembler {
      * Shows what approaches were tried so AI can try something different
      * Now supports detailed multi-line format from AGENT_DONE.md
      */
-    private static formatPreviousAttempts(attempts?: FixAttemptInfo[]): string {
+    public static formatPreviousAttempts(attempts?: FixAttemptInfo[]): string {
         if (!attempts || attempts.length === 0) {
             return '';
         }
@@ -333,7 +337,7 @@ export class GoldenPacketAssembler {
      * Get documentation context from docsRoot + node.contextFiles
      * Matches PromptGenerationService behavior (BDD/Test prompts).
      */
-    private static async getDocumentationContext(node: Node, workspacePath: string): Promise<string> {
+    public static async getDocumentationContext(node: Node, workspacePath: string): Promise<string> {
         const config = vscode.workspace.getConfiguration('tdad');
         const docsRoot = config.get<string>('project.docsRoot', 'docs/');
 

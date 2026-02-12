@@ -257,7 +257,8 @@ export class TestWorkflowHandlers {
         concurrency = 1,
         waitForDependencies = false,
         sequentialTests = true,
-        skipPassedScenarios = true
+        skipPassedScenarios = true,
+        batchTestMode = false
     ): Promise<void> {
         return this.nodeAutomationHandlers.handleRunAllNodesAutomation(
             confirmed,
@@ -266,8 +267,13 @@ export class TestWorkflowHandlers {
             concurrency,
             waitForDependencies,
             sequentialTests,
-            skipPassedScenarios
+            skipPassedScenarios,
+            batchTestMode
         );
+    }
+
+    async handleBatchAgentDone(): Promise<boolean> {
+        return this.nodeAutomationHandlers.handleBatchAgentDone();
     }
 
     handleStopAllNodesAutomation(): void {

@@ -26,7 +26,8 @@ interface AutopilotConfirmDialogProps {
     concurrency?: number,
     waitForDependencies?: boolean,
     sequentialTests?: boolean,
-    skipPassedScenarios?: boolean
+    skipPassedScenarios?: boolean,
+    batchTestMode?: boolean
   ) => void;
   onCancel: () => void;
   onOpenSettings?: () => void;
@@ -69,6 +70,7 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
   const [waitForDependencies, setWaitForDependencies] = useState<boolean>(false);
   const [sequentialTests, setSequentialTests] = useState<boolean>(true);
   const [skipPassedScenarios, setSkipPassedScenarios] = useState<boolean>(true);
+  const [batchTestMode, setBatchTestMode] = useState<boolean>(false);
 
   // CLI selection state
   const [selectedCli, setSelectedCli] = useState<string>('claude');
@@ -125,7 +127,8 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
       isSingleNode ? 1 : concurrency,
       waitForDependencies,
       concurrency > 1 ? sequentialTests : false,
-      skipPassedScenarios
+      skipPassedScenarios,
+      batchTestMode
     );
   };
 
@@ -215,39 +218,6 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
                 className="autopilot-retries-input"
               />
             </label>
-            <div className={`autopilot-concurrency-options ${concurrency > 1 ? 'autopilot-concurrency-options--visible' : ''}`}>
-              <label className="autopilot-skip-permissions-label autopilot-concurrency-option">
-                <input
-                  type="checkbox"
-                  checked={waitForDependencies}
-                  disabled={concurrency <= 1}
-                  onChange={(e) => setWaitForDependencies(e.target.checked)}
-                />
-                <span>Wait for dependencies</span>
-              </label>
-              <label className="autopilot-skip-permissions-label autopilot-concurrency-option">
-                <input
-                  type="checkbox"
-                  checked={sequentialTests}
-                  disabled={concurrency <= 1}
-                  onChange={(e) => setSequentialTests(e.target.checked)}
-                />
-                <span>Sequential test execution</span>
-              </label>
-            </div>
-          </div>
-        )}
-
-        {!isSingleNode && (
-          <div className="autopilot-retries-selector">
-            <label className="autopilot-skip-permissions-label">
-              <input
-                type="checkbox"
-                checked={skipPassedScenarios}
-                onChange={(e) => setSkipPassedScenarios(e.target.checked)}
-              />
-              <span>Skip Passed Scenarios</span>
-            </label>
           </div>
         )}
 
@@ -264,46 +234,67 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
               ))}
             </select>
           </label>
-          {selectedCli === 'claude' && (
-            <label className="autopilot-skip-permissions-label">
-              <input
-                type="checkbox"
-                checked={skipPermissions}
-                onChange={(e) => setSkipPermissions(e.target.checked)}
-              />
-              <span>Skip Permissions (--dangerously-skip-permissions)</span>
-            </label>
-          )}
-          {selectedCli === 'aider' && (
-            <label className="autopilot-skip-permissions-label">
-              <input
-                type="checkbox"
-                checked={skipPermissions}
-                onChange={(e) => setSkipPermissions(e.target.checked)}
-              />
-              <span>Auto Confirm (--yes)</span>
-            </label>
-          )}
-          {selectedCli === 'codex' && (
-            <label className="autopilot-skip-permissions-label">
-              <input
-                type="checkbox"
-                checked={skipPermissions}
-                onChange={(e) => setSkipPermissions(e.target.checked)}
-              />
-              <span>Bypass Approvals (--dangerously-bypass-approvals-and-sandbox)</span>
-            </label>
-          )}
-          {selectedCli === 'gemini' && (
-            <label className="autopilot-skip-permissions-label">
-              <input
-                type="checkbox"
-                checked={skipPermissions}
-                onChange={(e) => setSkipPermissions(e.target.checked)}
-              />
-              <span>Auto Approve (--yolo)</span>
-            </label>
-          )}
+        </div>
+
+        <div className="autopilot-options-section">
+          <div className="autopilot-options-label">Options</div>
+          <div className="autopilot-options-list">
+            {!isSingleNode && concurrency > 1 && (
+              <label className="autopilot-option-item">
+                <input
+                  type="checkbox"
+                  checked={waitForDependencies}
+                  onChange={(e) => setWaitForDependencies(e.target.checked)}
+                />
+                <span>Wait for dependencies</span>
+              </label>
+            )}
+            {!isSingleNode && concurrency > 1 && (
+              <label className="autopilot-option-item">
+                <input
+                  type="checkbox"
+                  checked={sequentialTests}
+                  onChange={(e) => setSequentialTests(e.target.checked)}
+                />
+                <span>Sequential test execution</span>
+              </label>
+            )}
+            {!isSingleNode && (
+              <label className="autopilot-option-item">
+                <input
+                  type="checkbox"
+                  checked={skipPassedScenarios}
+                  onChange={(e) => setSkipPassedScenarios(e.target.checked)}
+                />
+                <span>Skip passed scenarios</span>
+              </label>
+            )}
+            {!isSingleNode && selectedModes.has('run-fix') && (
+              <label className="autopilot-option-item">
+                <input
+                  type="checkbox"
+                  checked={batchTestMode}
+                  onChange={(e) => setBatchTestMode(e.target.checked)}
+                />
+                <span>Batch test execution</span>
+              </label>
+            )}
+            {(selectedCli === 'claude' || selectedCli === 'aider' || selectedCli === 'codex' || selectedCli === 'gemini') && (
+              <label className="autopilot-option-item">
+                <input
+                  type="checkbox"
+                  checked={skipPermissions}
+                  onChange={(e) => setSkipPermissions(e.target.checked)}
+                />
+                <span>
+                  {selectedCli === 'claude' && 'Skip permissions (--dangerously-skip-permissions)'}
+                  {selectedCli === 'aider' && 'Auto confirm (--yes)'}
+                  {selectedCli === 'codex' && 'Bypass approvals (--dangerously-bypass-approvals-and-sandbox)'}
+                  {selectedCli === 'gemini' && 'Auto approve (--yolo)'}
+                </span>
+              </label>
+            )}
+          </div>
         </div>
 
         <div className="autopilot-confirm-buttons">

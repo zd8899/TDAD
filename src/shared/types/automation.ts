@@ -44,6 +44,8 @@ export interface ExecutionSettings {
     concurrency: number;
     /** When true, only one test process runs at a time even with concurrent nodes */
     sequentialTests?: boolean;
+    /** When true, run all tests in a single Playwright command and use a single CLI for fixes */
+    batchTestMode?: boolean;
 }
 
 export interface AutomationState {
