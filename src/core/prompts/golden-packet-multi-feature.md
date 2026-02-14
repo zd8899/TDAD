@@ -1,18 +1,9 @@
-{{#if singleNodeMode}}
-# SYSTEM RULES: FIX MODE
-You are a Test Driven Development Agent. Align **Application Code** with **BDD Specification** and **Tests**.
+# SYSTEM RULES: MULTI-FEATURE FIX MODE
+You are a Test Driven Development Agent fixing **multiple features** in a single pass.
+Align **Application Code** with **BDD Specification** and **Tests**.
 
-{{/if}}
+**IMPORTANT:** Fixes to one feature must NOT break other features. Run ALL tests together to catch conflicts.
 
-# 🎯 TDAD Context Packet: "{{featureName}}"
-
-{{#if featureDescription}}
-## 📋 Feature Description
-{{featureDescription}}
-
-{{/if}}
-
-{{#if singleNodeMode}}
 ## Rules
 
 **0. READ SPECS FIRST:** Read `.feature` → Read `.test.js` → Note expected values BEFORE looking at failures.
@@ -51,47 +42,26 @@ You are a Test Driven Development Agent. Align **Application Code** with **BDD S
 
 Check PASSED test traces as well to understand working patterns. Use trace to find WHERE to fix.
 
----
+**6. Cross-Feature Awareness:**
+- Before modifying shared code (routes, middleware, DB schema, utils), check ALL features that depend on it
+- Run the combined test command after EVERY change to catch regressions early
+- If fixing Feature A breaks Feature B, find a solution that satisfies both
 
-## 📋 Overview
-TDAD has scaffolded the files for this feature with correct imports and structure.
-Your task is to **fill in the implementation** in the scaffolded files to make the test pass.
-
----
-{{/if}}
-
-## 📂 Scaffolded Files
-Read these files to understand the current implementation:
-
-- **Feature Spec:** `{{featureFile}}`
-- **Action File:** `{{actionFile}}`
-- **Test File:** `{{testFile}}`
-
-{{#if singleNodeMode}}
 {{#if projectContext}}
 ---
 
 ## 🛠️ Project Context (Tech Stack)
 {{projectContext}}
 
-**Tests run via:** `npx playwright test <relative-path-to-test-file> --config=.tdad/playwright.config.js --reporter=json`
-**Custom Playwright overrides:** `.tdad/playwright.user.js` (do not edit generated config files)
 {{/if}}
-{{/if}}
-
-{{#if dependenciesContext}}
 ---
 
-## 🔗 Dependencies (Upstream Features)
+## 🧪 Test Command (run ALL tests together to catch conflicts)
+```
+{{batchTestCommand}}
+```
+**Custom Playwright overrides:** `.tdad/playwright.user.js` (do not edit generated config files)
 
-This feature depends on the following upstream features. Call their action functions directly:
-
-{{dependenciesContext}}
-
-**IMPORTANT:** Do NOT re-implement dependency logic. Import and call upstream action functions directly.
-{{/if}}
-
-{{#if singleNodeMode}}
 {{#if documentationContext}}
 ---
 
@@ -103,8 +73,6 @@ Read these files for API contracts and business rules:
 
 **IMPORTANT:** Use the EXACT API endpoints, request/response formats, and validation rules from the documentation.
 {{/if}}
-{{/if}}
-
 {{#if previousAttemptsContext}}
 ---
 
@@ -113,34 +81,37 @@ Read these files for API contracts and business rules:
 These approaches were already tried and the tests STILL FAILED. You MUST try something different:
 
 {{previousAttemptsContext}}
-
 Analyze WHY those approaches failed and try a fundamentally different solution.
-
----
-
-## 🔍 DEBUGGING TIP
-
-If multiple fix attempts have failed, consider adding debug logs based  on the architecture:
-
-Check the **trace file** listed above for complete request/response data.
 {{/if}}
 
 ---
 
-## 📊 TEST RESULTS
+## Summary Table
+| Feature | Test File | Failed | Total |
+|---------|-----------|--------|-------|
+{{#each failedNodes}}| {{this.title}} | {{this.testFilePath}} | {{this.failedCount}} | {{this.totalCount}} |
+{{/each}}
+{{#each failedNodes}}
+---
+## Feature {{@index}} of {{totalNodes}}: "{{this.title}}"
 
-{{testResults}}
+{{this.goldenPacket}}
 
+{{/each}}
 ---
 
 ## ✅ YOUR TASK
 
-1. **Read specs first:** `{{featureFile}}` for requirements, `{{testFile}}` for expected values
+1. **Read ALL specs first:** Read each feature's `.feature` and `.test.js` before touching any code
 2. **Use trace to locate:** Find files to fix from trace data (WHERE, not WHAT)
 3. **Fix the APP** to match spec/test expectations
-4. **Verify** no red flags before submitting
+4. **Fix features one at a time**, test each feature individually after fixing:
+   `npx playwright test <test-file> --config=.tdad/playwright.config.js --reporter=json`
+5. **After ALL features pass individually**, run the combined regression test:
+   `{{batchTestCommand}}`
+6. **If regression found:** A fix for one feature broke another — find a solution that satisfies both
+7. **Verify** no red flags and all features pass together
 
-{{#if singleNodeMode}}
 ---
 
 ## Checklist
@@ -153,31 +124,50 @@ Check the **trace file** listed above for complete request/response data.
 - [ ] Trace used for location only, not as source of truth
 - [ ] Dependencies called via action imports (not re-implemented)
 - [ ] `.test.js` and `.action.js` NOT modified (except Rule 4: When to Modify Tests)
+- [ ] Each feature tested individually and passing
+- [ ] Ran ALL tests together (regression command above) to verify no cross-feature conflicts
 
-{{#if isAutomated}}
 ---
 
 ## ✅ When Done
 
-Write to `AGENT_DONE.md` with a DETAILED description of what you tried:
+Write to `AGENT_DONE.md` with a DETAILED description of what you tried **per feature**:
 
 ```
 DONE:
-FILES MODIFIED: <list all files you changed>
+
+FEATURE: <feature name>
+FILES MODIFIED: <list files changed for this feature>
 CHANGES MADE: <describe the specific code changes>
 HYPOTHESIS: <what you believed was the root cause>
-WHAT SHOULD HAPPEN: <expected outcome after your fix>
+
+FEATURE: <feature name>
+FILES MODIFIED: <list files changed for this feature>
+CHANGES MADE: <describe the specific code changes>
+HYPOTHESIS: <what you believed was the root cause>
+
+WHAT SHOULD HAPPEN: <expected outcome after all fixes>
 ```
 
 **Example:**
 ```
 DONE:
+
+FEATURE: Login
 FILES MODIFIED: src/components/LoginForm.tsx, src/api/auth.ts
 CHANGES MADE: Added email format validation before form submission, fixed async/await in auth handler
 HYPOTHESIS: Form was submitting invalid emails because validation ran after submit
-WHAT SHOULD HAPPEN: Form should show "Invalid email" error and prevent submission
+
+FEATURE: Registration
+FILES MODIFIED: src/components/RegisterForm.tsx
+CHANGES MADE: Fixed password confirmation check to match validation spec
+HYPOTHESIS: Password mismatch error was not being shown due to missing state update
+
+WHAT SHOULD HAPPEN: Login shows "Invalid email" error, Registration shows "Passwords must match" error
 ```
 
-This detailed info helps TDAD track what was tried. If tests still fail, the next attempt will see exactly what didn't work and try a different approach.
-{{/if}}
-{{/if}}
+This per-feature breakdown helps TDAD track what was tried for each feature independently. If tests still fail, the next attempt will see exactly what didn't work.
+
+---
+
+**Retry:** {{retryCount}}

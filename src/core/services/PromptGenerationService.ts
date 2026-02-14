@@ -182,8 +182,9 @@ export class PromptGenerationService {
     }
 
     /**
-     * Generate BATCH FIX prompt - wraps per-node golden packets in a batch envelope
+     * Generate Multi-Feature FIX prompt - wraps per-node golden packets in a shared envelope
      * Used by: BatchTestExecutionHandler.runBatchTestFixLoop
+     * Template: golden-packet-multi-feature.md (user-customizable via .tdad/prompts/)
      */
     async generateBatchFixPrompt(params: {
         failedNodes: Array<{ node: Node; testResults: TestResult[] }>;
@@ -194,7 +195,7 @@ export class PromptGenerationService {
     }): Promise<{ prompt: string; promptFilePath: string }> {
         const { failedNodes, allNodes, edges = [], previousAttempts, retryCount } = params;
 
-        // Build the batch test command (same folders the test runner uses)
+        // Build the test command (same folders the test runner uses)
         const folderFilters = [...new Set(failedNodes.map(({ node }) =>
             `.tdad/workflows/${getWorkflowFolderName(node.workflowId)}`
         ))];
@@ -205,125 +206,16 @@ export class PromptGenerationService {
         const documentationContext = await GoldenPacketAssembler.getDocumentationContext(firstNode, this.workspacePath);
         const projectContext = await GoldenPacketAssembler.getProjectContext(this.workspacePath);
 
-        const lines: string[] = [];
+        // Format previous attempts
+        const previousAttemptsContext = GoldenPacketAssembler.formatPreviousAttempts(previousAttempts) || '';
 
-        // ── Shared header (appears ONCE, not per-feature) ──
-        lines.push('# SYSTEM RULES: BATCH FIX MODE');
-        lines.push('You are a Test Driven Development Agent fixing **multiple features** in a single pass.');
-        lines.push('Align **Application Code** with **BDD Specification** and **Tests**.');
-        lines.push('');
-        lines.push('**IMPORTANT:** Fixes to one feature must NOT break other features. Run ALL tests together to catch conflicts.');
-        lines.push('');
-
-        // ── Rules (same as golden-packet.md, appears once) ──
-        lines.push('## Rules');
-        lines.push('');
-        lines.push('**0. READ SPECS FIRST:** Read `.feature` → Read `.test.js` → Note expected values BEFORE looking at failures.');
-        lines.push('');
-        lines.push('**1. Hierarchy of Truth:**');
-        lines.push('- `.feature` = Requirements → `.test.js` = Verification → App = Must conform');
-        lines.push('- **App is NEVER the source of truth. Fix APP, not tests.**');
-        lines.push('');
-        lines.push('**2. Decision Flow:**');
-        lines.push('- Spec + Test agree → Fix APP');
-        lines.push('- Spec ≠ Test → Fix TEST to match spec, then fix APP');
-        lines.push('- No spec → Test is truth, fix APP');
-        lines.push('');
-        lines.push('**3. Red Flags (STOP if doing these):**');
-        lines.push('- ❌ Changing `expect("X")` to match app output');
-        lines.push('- ❌ "Both messages mean the same thing"');
-        lines.push('- ❌ Expanding helpers to accept app output');
-        lines.push('- ❌ Rationalizing app behavior as "correct"');
-        lines.push('');
-        lines.push('**4. When to Modify Tests (ONLY):**');
-        lines.push('- Selector/locator is wrong');
-        lines.push('- Syntax error or missing import');
-        lines.push('- Test contradicts `.feature` spec');
-        lines.push('- NEVER change expected values to match app behavior');
-        lines.push('- Test/DB isolation issues');
-        lines.push('- Test violates rules from `generate-tests.md` (e.g., uses xpath/css selectors, waitForTimeout, conditional assertions, textContent extraction before assertions, missing round-trip verification)');
-        lines.push('');
-        lines.push('**5. NEVER Guess, find root cause using Trace File:** The trace file (`.tdad/debug/trace-*.json`) contains everything you need:');
-        lines.push('- `apiRequests`: All API calls with method, URL, status, request/response bodies');
-        lines.push('- `consoleLogs`: Browser console output with type, text, and source location');
-        lines.push('- `pageErrors`: Uncaught JavaScript errors with stack traces');
-        lines.push('- `actionResult`: Action outcome with statusCode and response body');
-        lines.push('- `errorMessage` + `callStack`: Exact failure location');
-        lines.push('- `domSnapshot`: Accessibility tree (YAML) - captured for all tests');
-        lines.push('- `screenshotPath`: Visual evidence');
-        lines.push('');
-        lines.push('Check PASSED test traces as well to understand working patterns. Use trace to find WHERE to fix.');
-        lines.push('');
-
-        // ── Project Context (appears once) ──
-        if (projectContext) {
-            lines.push('---');
-            lines.push('');
-            lines.push('## 🛠️ Project Context (Tech Stack)');
-            lines.push(projectContext);
-            lines.push('');
-        }
-
-        // ── Batch test command ──
-        lines.push('---');
-        lines.push('');
-        lines.push('## 🧪 Test Command (run ALL tests together to catch conflicts)');
-        lines.push('```');
-        lines.push(batchTestCommand);
-        lines.push('```');
-        lines.push('**Custom Playwright overrides:** `.tdad/playwright.user.js` (do not edit generated config files)');
-        lines.push('');
-
-        // ── Documentation Context (appears once) ──
-        if (documentationContext) {
-            lines.push('---');
-            lines.push('');
-            lines.push('## 📚 Documentation Context');
-            lines.push('');
-            lines.push('Read these files for API contracts and business rules:');
-            lines.push('');
-            lines.push(documentationContext);
-            lines.push('');
-            lines.push('**IMPORTANT:** Use the EXACT API endpoints, request/response formats, and validation rules from the documentation.');
-            lines.push('');
-        }
-
-        // ── Previous Attempts (appears once, not per-feature) ──
-        const previousAttemptsFormatted = GoldenPacketAssembler.formatPreviousAttempts(previousAttempts);
-        if (previousAttemptsFormatted) {
-            lines.push('---');
-            lines.push('');
-            lines.push('## ⚠️ PREVIOUS FIX ATTEMPTS (DO NOT REPEAT)');
-            lines.push('');
-            lines.push('These approaches were already tried and the tests STILL FAILED. You MUST try something different:');
-            lines.push('');
-            lines.push(previousAttemptsFormatted);
-            lines.push('Analyze WHY those approaches failed and try a fundamentally different solution.');
-            lines.push('');
-        }
-
-        // ── Summary table ──
-        lines.push('---');
-        lines.push('');
-        lines.push('## Summary Table');
-        lines.push('| Feature | Test File | Failed | Total |');
-        lines.push('|---------|-----------|--------|-------|');
-
+        // Pre-assemble per-node golden packets
+        const assembledNodes = [];
         for (const { node, testResults } of failedNodes) {
             const failedCount = testResults.filter(r => !r.passed).length;
             const fileName = FileNameGenerator.getNodeFileName(node as any);
             const workflowFolderName = getWorkflowFolderName(node.workflowId);
             const testFilePath = getTestFilePath(workflowFolderName, fileName);
-            lines.push(`| ${node.title} | ${testFilePath} | ${failedCount} | ${testResults.length} |`);
-        }
-        lines.push('');
-
-        // ── Per-feature sections (batchMode=true skips shared sections) ──
-        for (let i = 0; i < failedNodes.length; i++) {
-            const { node, testResults } = failedNodes[i];
-            lines.push(`---`);
-            lines.push(`## Feature ${i + 1} of ${failedNodes.length}: "${node.title}"`);
-            lines.push('');
 
             const goldenPacket = await GoldenPacketAssembler.assembleAndSave(
                 node,
@@ -331,52 +223,31 @@ export class PromptGenerationService {
                 this.workspacePath,
                 allNodes,
                 edges,
-                undefined,  // previousAttempts in batch envelope above, not per-node
-                false,      // isAutomated=false (When Done is in the batch envelope below)
+                undefined,  // previousAttempts in envelope, not per-node
+                false,      // isAutomated=false (When Done is in the envelope)
                 true        // batchMode=true (skip Rules, Docs, Checklist, When Done)
             );
-            lines.push(goldenPacket);
-            lines.push('');
+
+            assembledNodes.push({
+                title: node.title,
+                testFilePath,
+                failedCount,
+                totalCount: testResults.length,
+                goldenPacket
+            });
         }
 
-        // ── Shared footer: Checklist (appears once) ──
-        lines.push('---');
-        lines.push('');
-        lines.push('## Checklist');
-        lines.push('- [ ] Read `.feature` spec BEFORE looking at failures');
-        lines.push('- [ ] Read `.test.js` expected values BEFORE fixing');
-        lines.push('- [ ] Didn\'t guess the problem, found the root cause using trace files, screenshots, and passed tests');
-        lines.push('- [ ] Fixed APP code, not test expectations');
-        lines.push('- [ ] Error messages match spec EXACTLY');
-        lines.push('- [ ] No red flags (changing expects, rationalizing app behavior)');
-        lines.push('- [ ] Trace used for location only, not as source of truth');
-        lines.push('- [ ] Dependencies called via action imports (not re-implemented)');
-        lines.push('- [ ] `.test.js` and `.action.js` NOT modified (except Rule 4: When to Modify Tests)');
-        lines.push('- [ ] Ran ALL tests together (batch command above) to verify no cross-feature conflicts');
-        lines.push('');
+        // Generate prompt from template (user-customizable)
+        const prompt = await this.promptService.generatePrompt('golden-packet-multi-feature', {
+            projectContext,
+            batchTestCommand,
+            documentationContext,
+            previousAttemptsContext,
+            failedNodes: assembledNodes,
+            totalNodes: failedNodes.length,
+            retryCount
+        });
 
-        // ── Shared footer: When Done (appears once) ──
-        lines.push('---');
-        lines.push('');
-        lines.push('## ✅ When Done');
-        lines.push('');
-        lines.push('Write to `AGENT_DONE.md` with a DETAILED description of what you tried:');
-        lines.push('');
-        lines.push('```');
-        lines.push('DONE:');
-        lines.push('FILES MODIFIED: <list all files you changed>');
-        lines.push('CHANGES MADE: <describe the specific code changes>');
-        lines.push('HYPOTHESIS: <what you believed was the root cause>');
-        lines.push('WHAT SHOULD HAPPEN: <expected outcome after your fix>');
-        lines.push('```');
-        lines.push('');
-        lines.push('This detailed info helps TDAD track what was tried. If tests still fail, the next attempt will see exactly what didn\'t work and try a different approach.');
-        lines.push('');
-        lines.push('---');
-        lines.push('');
-        lines.push(`**Batch Retry:** ${retryCount}`);
-
-        const prompt = lines.join('\n');
         const promptFilePath = this.savePromptToFile(prompt, 'batch', 'golden-packet', retryCount);
 
         return { prompt, promptFilePath };

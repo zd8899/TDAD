@@ -276,7 +276,7 @@ export const AutopilotConfirmDialog: React.FC<AutopilotConfirmDialogProps> = ({
                   checked={batchTestMode}
                   onChange={(e) => setBatchTestMode(e.target.checked)}
                 />
-                <span>Batch test execution</span>
+                <span>Regression / Multi-Feature</span>
               </label>
             )}
             {(selectedCli === 'claude' || selectedCli === 'aider' || selectedCli === 'codex' || selectedCli === 'gemini') && (

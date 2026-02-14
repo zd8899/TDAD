@@ -102,7 +102,7 @@ export class PromptService {
             fs.mkdirSync(this.workspacePromptsDir, { recursive: true });
         }
 
-        const templates = ['generate-bdd.md', 'generate-tests.md', 'generate-blueprint.md', 'golden-packet.md', 'generate-project-docs.md', 'generate-project-scaffold.md'];
+        const templates = ['generate-bdd.md', 'generate-tests.md', 'generate-blueprint.md', 'golden-packet.md', 'golden-packet-multi-feature.md', 'generate-project-docs.md', 'generate-project-scaffold.md'];
         const appliedHashes = this.loadAppliedHashes();
         let hashesChanged = false;
 
@@ -151,7 +151,7 @@ export class PromptService {
      * Record that the current extension hashes have been applied (called after user updates)
      */
     async markTemplatesAsApplied(): Promise<void> {
-        const templates = ['generate-bdd.md', 'generate-tests.md', 'generate-blueprint.md', 'golden-packet.md', 'generate-project-docs.md', 'generate-project-scaffold.md'];
+        const templates = ['generate-bdd.md', 'generate-tests.md', 'generate-blueprint.md', 'golden-packet.md', 'golden-packet-multi-feature.md', 'generate-project-docs.md', 'generate-project-scaffold.md'];
         const appliedHashes = this.loadAppliedHashes();
 
         for (const template of templates) {
@@ -794,4 +794,5 @@ export class PromptService {
 
         return await this.generatePrompt('generate-blueprint', promptContext);
     }
+
 }
