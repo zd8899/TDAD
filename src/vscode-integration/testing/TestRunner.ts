@@ -1173,6 +1173,14 @@ export class TestRunner implements ITestRunner {
             this.outputChannel.appendLine(`📊 ${matchedNode.title}: ${passedCount}/${nodeResults.length} passed`);
         }
 
+        // Parse coverage/trace data and attach to all node results
+        // (same as single-node flow - without this, golden packet shows "No trace data captured")
+        for (const [, nodeResults] of resultMap) {
+            if (nodeResults.length > 0) {
+                this.parseCoverageAndAttachToResults(nodeResults, workspacePath, true);
+            }
+        }
+
         // For nodes not found in results, add empty results
         for (const node of nodes) {
             if (!resultMap.has(node.id)) {

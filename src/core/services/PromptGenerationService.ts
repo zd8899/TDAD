@@ -14,7 +14,7 @@ import { logger, logError } from '../../shared/utils/Logger';
 /**
  * Prompt types for file naming
  */
-type PromptType = 'generate-bdd' | 'generate-tests' | 'golden-packet';
+type PromptType = 'generate-bdd' | 'generate-tests' | 'golden-packet' | 'golden-packet-multi-feature';
 
 /**
  * PromptGenerationService - Single Source of Truth for Prompt Generation
@@ -248,7 +248,7 @@ export class PromptGenerationService {
             retryCount
         });
 
-        const promptFilePath = this.savePromptToFile(prompt, 'batch', 'golden-packet', retryCount);
+        const promptFilePath = this.savePromptToFile(prompt, 'batch', 'golden-packet-multi-feature');
 
         return { prompt, promptFilePath };
     }

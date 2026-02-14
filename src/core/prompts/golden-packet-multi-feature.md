@@ -2,7 +2,6 @@
 You are a Test Driven Development Agent fixing **multiple features** in a single pass.
 Align **Application Code** with **BDD Specification** and **Tests**.
 
-**IMPORTANT:** Fixes to one feature must NOT break other features. Run ALL tests together to catch conflicts.
 
 ## Rules
 

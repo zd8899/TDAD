@@ -5,6 +5,20 @@ All notable changes to the TDAD extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.25] - 2026-02-14
+
+### Added
+- **Batch test execution mode**: New testing mode that allows running tests in batches with enhanced agent coordination
+- **Headless agent orchestration**: Implemented headless mode for CLI agent automation with real-time status updates and improved coordination
+- **Skip passed scenarios**: Autopilot now intelligently skips test scenarios that have already passed in the current workflow run
+
+### Changed
+- **Prompt template refactor**: Deduplicated rules, checklist, and when-done sections using section markers for more maintainable prompt templates
+- **Playwright configuration**: Refactored TDAD Playwright config for better integration and cleaner architecture
+
+### Fixed
+- **Automation stability**: Stabilized node status tracking and test orchestration to prevent race conditions and ensure accurate status display during batch operations
+
 ## [0.0.24] - 2026-02-07
 
 ### Added
