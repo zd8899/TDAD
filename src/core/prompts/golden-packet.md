@@ -131,6 +131,7 @@ Check the **trace file** listed above for complete request/response data.
 
 {{testResults}}
 
+{{#if singleNodeMode}}
 ---
 
 ## ✅ YOUR TASK
@@ -140,7 +141,6 @@ Check the **trace file** listed above for complete request/response data.
 3. **Fix the APP** to match spec/test expectations
 4. **Verify** no red flags before submitting
 
-{{#if singleNodeMode}}
 ---
 
 ## Checklist
