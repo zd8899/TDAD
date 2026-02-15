@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { spawn, ChildProcess } from 'child_process';
 import { Node, TestResult } from '../../shared/types';
 import { logTestRunner, logError } from '../../shared/utils/Logger';
 import { getWorkflowFolderName } from '../../shared/utils/stringUtils';
@@ -11,26 +10,30 @@ import { getNodeFeatures } from '../../shared/types/typeGuards';
 import { CoverageParser } from '../../core/testing/CoverageParser';
 import { ITestRunner, TestRunOptions } from '../../core/testing/ITestRunner';
 import { FileNameGenerator } from '../../shared/utils/fileNameGenerator';
-import { ScaffoldingService } from '../../core/workflows/ScaffoldingService';
-import { assignTestIdsToFile } from '../../shared/utils/idGenerator';
-import stripAnsi from 'strip-ansi';
+import { TestProcessManager } from './TestProcessManager';
+import {
+    ensurePlaywrightPrerequisites,
+    clearNodeDebugArtifacts,
+    assignTestIds,
+    buildPlaywrightCommand,
+    buildBatchPlaywrightCommand
+} from './PlaywrightEnvironment';
+import {
+    TestExecutionResult,
+    createCanceledExecutionResult,
+    extractPlaywrightJson,
+    extractSpecsFromSuites,
+    parsePlaywrightError,
+    buildSyntheticErrorResult,
+    logTestResult
+} from './PlaywrightResultParser';
 
-export interface TestExecutionResult {
-    results: TestResult[];
-    duration: number; // milliseconds
-    stdout: string;
-    stderr: string;
-    exitCode: number | null;
-    timedOut: boolean;
-}
+export { TestExecutionResult } from './PlaywrightResultParser';
 
 export class TestRunner implements ITestRunner {
     private outputChannel: vscode.OutputChannel;
     private terminal: vscode.Terminal | undefined;
-    private currentProcess: ChildProcess | null = null;
-    private activeProcesses: Map<number, { process: ChildProcess; workingDir: string }> = new Map();
-    private observedWorkingDirs: Set<string> = new Set();
-    private cancelRequested = false;
+    private processManager: TestProcessManager;
 
     /** When true, only one test process runs at a time (queue via promise chain) */
     static sequentialMode = false;
@@ -41,6 +44,7 @@ export class TestRunner implements ITestRunner {
 
     constructor() {
         this.outputChannel = vscode.window.createOutputChannel('TDAD Tests');
+        this.processManager = new TestProcessManager(this.outputChannel);
     }
 
     async runNodeTests(node: Node, generatedCode: string, options?: TestRunOptions): Promise<TestResult[]> {
@@ -81,7 +85,7 @@ export class TestRunner implements ITestRunner {
 
     private async runNodeTestsInternal(node: Node, generatedCode: string, options: TestRunOptions | undefined, runToken: number): Promise<TestResult[]> {
         const startTime = Date.now();
-        this.cancelRequested = false;
+        this.processManager.cancelRequested = false;
         const opts: TestRunOptions = {
             timeout: undefined,
             framework: 'playwright',
@@ -116,7 +120,7 @@ export class TestRunner implements ITestRunner {
             this.outputChannel.appendLine(`📁 Test file: ${automatedTestFilePath}\n`);
 
             try {
-                const executionResult = await this.runTests(automatedTestFilePath, node, opts, runToken);
+                const executionResult = await this.runPlaywrightTestsForNode(automatedTestFilePath, node, runToken);
                 results = executionResult.results;
 
                 // Log detailed execution info
@@ -188,16 +192,12 @@ export class TestRunner implements ITestRunner {
         return results;
     }
 
-
-
-
     private async findAutomatedTestFile(node: Node): Promise<string | null> {
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
         if (!workspaceFolder) {
             return null;
         }
 
-        // Compute the path deterministically (no need to store on node)
         const workflowFolderName = getWorkflowFolderName(node.workflowId);
         const fileName = FileNameGenerator.getNodeFileName(node);
         const testFilePath = getAbsolutePath(workspaceFolder.uri.fsPath, getTestFilePath(workflowFolderName, fileName));
@@ -217,169 +217,51 @@ export class TestRunner implements ITestRunner {
         return null;
     }
 
-
     /**
-     * Run tests using Playwright
+     * Run Playwright tests for a single node
      */
-    private async runTests(testFilePath: string, node: Node, options: TestRunOptions, runToken: number): Promise<TestExecutionResult> {
+    private async runPlaywrightTestsForNode(testFilePath: string, node: Node, runToken: number): Promise<TestExecutionResult> {
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
         if (!workspaceFolder) {
             throw new Error('No workspace folder found');
         }
 
         const workspacePath = workspaceFolder.uri.fsPath;
-        this.outputChannel.appendLine(`🔧 Using test framework: playwright\n`);
-
-        return await this.runPlaywrightTests(testFilePath, node, workspacePath, runToken);
-    }
-
-    /**
-     * Run Playwright tests with enhanced error reporting
-     */
-    private async runPlaywrightTests(testFilePath: string, node: Node, workspacePath: string, runToken: number): Promise<TestExecutionResult> {
         const startTime = Date.now();
 
         if (this.isCancellationRequested(runToken)) {
-            return this.createCanceledExecutionResult(Date.now() - startTime);
+            return createCanceledExecutionResult(0);
         }
 
-        // Build diagnostic log for inclusion in error results
-        // This captures all diagnostic output so AI can see full context on failures
+        this.outputChannel.appendLine(`🔧 Using test framework: playwright\n`);
+
+        // Diagnostic logger captures output for AI context on failures
         const diagnosticLines: string[] = [];
         const logDiagnostic = (line: string) => {
             diagnosticLines.push(line);
             this.outputChannel.appendLine(line);
         };
+        const diagnosticSink = { appendLine: logDiagnostic };
 
         try {
-            // Ensure fixtures file is up-to-date before running tests
-            // This regenerates tdad-fixtures.js with latest screenshot/trace path logic
-            const scaffoldingService = new ScaffoldingService();
-            scaffoldingService.ensureFixturesFile(workspacePath);
-            // Ensure Playwright global lock hook exists.
-            scaffoldingService.ensurePlaywrightGlobalLockFile(workspacePath);
+            // Pre-flight setup
+            ensurePlaywrightPrerequisites(workspacePath, diagnosticSink);
+            clearNodeDebugArtifacts(node, workspacePath, diagnosticSink);
+            assignTestIds(testFilePath, workspacePath, diagnosticSink);
 
-            // Ensure TDAD Playwright config bundle exists before running tests.
-            // Files:
-            // - .tdad/playwright.config.js (wrapper entrypoint)
-            // - .tdad/playwright.generated.js (TDAD-managed)
-            // - .tdad/playwright.user.js (user-managed overrides)
-            const tdadConfigFile = path.join(workspacePath, '.tdad', 'playwright.config.js');
-            const tdadGeneratedConfigFile = path.join(workspacePath, '.tdad', 'playwright.generated.js');
-            const tdadUserConfigFile = path.join(workspacePath, '.tdad', 'playwright.user.js');
-            const config = vscode.workspace.getConfiguration('tdad');
-            // Fallback to 5173 only if no URLs configured (for generated projects, .vscode/settings.json should have correct ports)
-            const urls = config.get<Record<string, string>>('test.urls', { ui: 'http://localhost:5173' });
-            const workers = config.get<number>('test.workers', 1);
-
-            let shouldRegenerateConfig = false;
-            let configReason = 'missing';
-            if (!fs.existsSync(tdadConfigFile)) {
-                shouldRegenerateConfig = true;
-                configReason = 'missing-wrapper';
-            } else if (!fs.existsSync(tdadGeneratedConfigFile)) {
-                shouldRegenerateConfig = true;
-                configReason = 'missing-generated';
-            } else if (!fs.existsSync(tdadUserConfigFile)) {
-                shouldRegenerateConfig = true;
-                configReason = 'missing-user';
-            } else {
-                try {
-                    const currentConfig = fs.readFileSync(tdadConfigFile, 'utf-8');
-                    if (!currentConfig.includes('TDAD_WRAPPER_CONFIG_V2')) {
-                        shouldRegenerateConfig = true;
-                        configReason = 'legacy-wrapper-migration';
-                    }
-                } catch {
-                    shouldRegenerateConfig = true;
-                    configReason = 'wrapper-read-failed';
-                }
-            }
-
-            if (shouldRegenerateConfig) {
-                scaffoldingService.scaffoldPlaywrightConfig(workspacePath, urls, workers);
-                const verb = configReason.startsWith('missing') ? 'Created' : `Regenerated (${configReason})`;
-                logDiagnostic(`TDAD Playwright config bundle created/updated (.tdad/playwright.config.js + generated/user files)`);
-            }
-
-            // Auto-assign test IDs before running (assigns [UI-XXX] or [API-XXX] to tests without IDs)
-            if (assignTestIdsToFile(testFilePath, workspacePath)) {
-                logDiagnostic(`🏷️ Assigned test IDs to ${path.basename(testFilePath)}`);
-            }
-
-            // Clear previous coverage data before running tests
-            // This prevents stale data from accumulating across runs
-            const coverageDir = path.join(workspacePath, '.tdad', 'coverage');
-            if (fs.existsSync(coverageDir)) {
-                const files = fs.readdirSync(coverageDir);
-                let cleared = 0;
-                for (const file of files) {
-                    // Clear both single coverage.json and worker files
-                    if (file === 'coverage.json' || file.startsWith('coverage-worker-')) {
-                        fs.unlinkSync(path.join(coverageDir, file));
-                        cleared++;
-                    }
-                }
-                if (cleared > 0) {
-                    logDiagnostic(`🧹 Cleared ${cleared} previous coverage file(s)`);
-                }
-            }
-
-            // Clear previous screenshots and trace files for THIS NODE ONLY
-            // This prevents stale debug data while preserving other nodes' data
-            const fileName = FileNameGenerator.getNodeFileName(node as any);
-            // Handle both workflowId formats: "name-workflow" and "name.workflow.json"
-            const workflowFolderName = getWorkflowFolderName(node.workflowId?.replace('.workflow.json', '') || 'default');
-            const nodePath = `${workflowFolderName}/${fileName}`;
-            logDiagnostic(`🔍 Debug path: workflowId="${node.workflowId}" -> nodePath="${nodePath}"`);
-
-            // Clear screenshots for this node: .tdad/debug/{workflow}/{node}/screenshots/
-            const screenshotDir = path.join(workspacePath, '.tdad', 'debug', nodePath, 'screenshots');
-            if (fs.existsSync(screenshotDir)) {
-                const files = fs.readdirSync(screenshotDir);
-                for (const file of files) {
-                    fs.unlinkSync(path.join(screenshotDir, file));
-                }
-                logDiagnostic(`🧹 Cleared ${files.length} previous screenshot(s) for ${node.title}`);
-            }
-
-            // Clear trace files for this node: .tdad/debug/{workflow}/{node}/trace-files/
-            const traceDir = path.join(workspacePath, '.tdad', 'debug', nodePath, 'trace-files');
-            if (fs.existsSync(traceDir)) {
-                const files = fs.readdirSync(traceDir);
-                for (const file of files) {
-                    fs.unlinkSync(path.join(traceDir, file));
-                }
-                logDiagnostic(`🧹 Cleared ${files.length} previous trace file(s) for ${node.title}`);
-            }
-
-            // Get path relative to CWD (workspace root) for Playwright
-            // Just pass the simple relative path - Playwright will handle it correctly
+            // Build and execute command
+            const command = buildPlaywrightCommand(testFilePath, workspacePath);
             const relativeTestPath = path.relative(workspacePath, testFilePath).replace(/\\/g, '/');
-
-            // Use TDAD's wrapper config explicitly to avoid conflicts with user's own config.
-            // Effective settings are generated config + user overrides merged by the wrapper.
-            const tdadConfigPath = '.tdad/playwright.config.js';
-
-            // MVP Phase 4: Code coverage for Playwright browser tests
-            // Note: c8/nyc only work for Node.js code, not browser code
-            // For browser coverage, use Playwright's Coverage API (page.coverage) in test files
-            // See: https://playwright.dev/docs/api/class-coverage
-            // Don't quote the path - causes issues with cmd.exe on Windows
-            // Use multiple reporters: 'list' for real-time streaming, 'json' for structured data
-            // The list output goes to stderr, JSON goes to stdout - both are captured
-            const command = `npx playwright test ${relativeTestPath} --config=${tdadConfigPath} --reporter=list,json`;
-
             logDiagnostic(`🔍 Command: ${command}`);
             logDiagnostic(`🔍 Working directory: ${workspacePath}`);
             logDiagnostic(`🔍 Test file path: ${testFilePath}`);
             logDiagnostic(`🔍 Relative test path: ${relativeTestPath}`);
-            logDiagnostic(`🔍 TDAD config: ${tdadConfigPath}`);
+            logDiagnostic(`🔍 TDAD config: .tdad/playwright.config.js`);
 
-            const execResult = await this.executeCommandWithTimeout(command, workspacePath);
+            const execResult = await this.processManager.executeCommandWithTimeout(command, workspacePath);
 
-            if (this.isCancellationRequested(runToken) || this.cancelRequested) {
-                return this.createCanceledExecutionResult(Date.now() - startTime);
+            if (this.isCancellationRequested(runToken) || this.processManager.cancelRequested) {
+                return createCanceledExecutionResult(Date.now() - startTime);
             }
 
             logDiagnostic(`\n📤 STDOUT length: ${execResult.stdout.length} bytes`);
@@ -391,13 +273,13 @@ export class TestRunner implements ITestRunner {
                 logDiagnostic(`\n⚠️ Playwright exited with non-zero code. This is expected for failing tests.`);
             }
 
-
+            // Parse JSON output
             let jsonResult;
             try {
-                jsonResult = TestRunner.extractPlaywrightJson(execResult.stdout);
+                jsonResult = extractPlaywrightJson(execResult.stdout);
             } catch (parseError) {
-                if (this.isCancellationRequested(runToken) || this.cancelRequested) {
-                    return this.createCanceledExecutionResult(Date.now() - startTime);
+                if (this.isCancellationRequested(runToken) || this.processManager.cancelRequested) {
+                    return createCanceledExecutionResult(Date.now() - startTime);
                 }
                 logDiagnostic(`\n❌ Failed to parse Playwright JSON output`);
                 logDiagnostic(`Parse error: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
@@ -405,93 +287,52 @@ export class TestRunner implements ITestRunner {
                 logDiagnostic(`First 500 chars: ${execResult.stdout.substring(0, 500)}`);
                 logDiagnostic(`Last 500 chars: ${execResult.stdout.substring(Math.max(0, execResult.stdout.length - 500))}`);
 
-                // When Playwright fails to start (config error, etc.), return a synthetic test result
-                // with FULL diagnostic output so the AI agent can see what went wrong
-                const duration = Date.now() - startTime;
-
-                // Include stderr in diagnostic log
                 if (execResult.stderr) {
                     logDiagnostic(`\n❌ STDERR:\n${execResult.stderr}`);
                 }
 
-                // Build full diagnostic output for AI
                 const fullDiagnosticOutput = diagnosticLines.join('\n');
-
                 logDiagnostic(`\n📤 Returning synthetic error result with full diagnostic output`);
 
-                // Create a synthetic Test object for the startup error
-                const syntheticTest: TestResult = {
-                    test: {
-                        id: 'playwright-startup-error',
-                        featureId: node.id,
-                        title: 'Playwright Startup Error',
-                        description: 'Playwright failed to start - check configuration',
-                        input: {},
-                        expectedResult: {}
-                    },
-                    passed: false,
-                    error: `Playwright failed to start. This is usually a configuration or syntax error.\n\n--- FULL TEST OUTPUT ---\n${fullDiagnosticOutput}`,
-                    fullError: fullDiagnosticOutput
-                };
-
-                return {
-                    results: [syntheticTest],
-                    duration,
-                    stdout: execResult.stdout,
-                    stderr: execResult.stderr,
-                    exitCode: execResult.exitCode,
-                    timedOut: execResult.timedOut
-                };
+                return buildSyntheticErrorResult(
+                    node.id,
+                    'playwright-startup-error',
+                    'Playwright Startup Error',
+                    'Playwright failed to start - check configuration',
+                    `Playwright failed to start. This is usually a configuration or syntax error.\n\n--- FULL TEST OUTPUT ---\n${fullDiagnosticOutput}`,
+                    fullDiagnosticOutput,
+                    execResult,
+                    Date.now() - startTime
+                );
             }
 
-            const results: TestResult[] = [];
-
-            // Check for Playwright-level errors (module not found, syntax errors, etc.)
-            // These are in jsonResult.errors when tests can't even load
+            // Check for Playwright-level load errors
             const playwrightErrors = jsonResult.errors || [];
             if (playwrightErrors.length > 0 && (!jsonResult.suites || jsonResult.suites.length === 0)) {
-                // Playwright encountered errors before any tests could run
-                const duration = Date.now() - startTime;
                 const errorMessages = playwrightErrors.map((e: any) => e.message || e.stack || String(e)).join('\n\n');
-
                 logDiagnostic(`\n❌ Playwright encountered ${playwrightErrors.length} error(s) before tests could run`);
                 logDiagnostic(`\n${errorMessages}`);
-
-                // Build full diagnostic output for AI
                 const fullDiagnosticOutput = diagnosticLines.join('\n');
 
-                // Create a synthetic test result with the error details
-                const syntheticTest: TestResult = {
-                    test: {
-                        id: 'playwright-load-error',
-                        featureId: node.id,
-                        title: 'Test File Load Error',
-                        description: 'Tests could not be loaded - check imports and dependencies',
-                        input: {},
-                        expectedResult: {}
-                    },
-                    passed: false,
-                    error: `Tests failed to load. Check imports and module paths.\n\n--- ERRORS ---\n${errorMessages}\n\n--- FULL DIAGNOSTIC OUTPUT ---\n${fullDiagnosticOutput}`,
-                    fullError: `${errorMessages}\n\n${fullDiagnosticOutput}`
-                };
-
-                return {
-                    results: [syntheticTest],
-                    duration,
-                    stdout: execResult.stdout,
-                    stderr: execResult.stderr,
-                    exitCode: execResult.exitCode,
-                    timedOut: execResult.timedOut
-                };
+                return buildSyntheticErrorResult(
+                    node.id,
+                    'playwright-load-error',
+                    'Test File Load Error',
+                    'Tests could not be loaded - check imports and dependencies',
+                    `Tests failed to load. Check imports and module paths.\n\n--- ERRORS ---\n${errorMessages}\n\n--- FULL DIAGNOSTIC OUTPUT ---\n${fullDiagnosticOutput}`,
+                    `${errorMessages}\n\n${fullDiagnosticOutput}`,
+                    execResult,
+                    Date.now() - startTime
+                );
             }
 
+            // Build results from Playwright output
             const topLevelSuites = jsonResult.suites || [];
-            const specs = TestRunner.extractSpecsFromSuites(topLevelSuites);
+            const specs = extractSpecsFromSuites(topLevelSuites);
             const tests = specs.flatMap((spec: any) => spec.tests || []);
 
             this.outputChannel.appendLine(`\n📊 Playwright returned ${tests.length} test results`);
 
-            // Parse test file to get current test definitions (single source of truth)
             const parsedTests = TestFileParser.parseTestFile(testFilePath, node.id);
             const parsedFeatures = parsedTests?.features || [];
             const features = parsedFeatures.length > 0 ? parsedFeatures : getNodeFeatures(node);
@@ -502,212 +343,13 @@ export class TestRunner implements ITestRunner {
                 this.outputChannel.appendLine(`⚠️  Using test definitions from node (fallback)`);
             }
 
-            // Match test results with test definitions
-            if (features.length === 0 || features.every(f => !f.tests || f.tests.length === 0)) {
-                // No features/tests defined in node - create results directly from Playwright tests
-                this.outputChannel.appendLine(`⚠️  No test definitions in node - using Playwright test names`);
-
-                for (let i = 0; i < tests.length; i++) {
-                    const playwrightTest = tests[i];
-                    const spec = specs.find(s => s.tests?.includes(playwrightTest));
-                    const passed = playwrightTest?.results?.[0]?.status === 'passed';
-                    const testTitle = spec?.title || `Test ${i + 1}`;
-
-                    // Extract error information
-                    let error: string | undefined;
-                    let fullError: string | undefined;
-
-                    if (playwrightTest && !passed) {
-                        const testResult = playwrightTest.results?.[0];
-                        if (testResult?.error) {
-                            // Extract the full error message with expected/actual values
-                            const rawMessage = stripAnsi(testResult.error.message || 'Test failed');
-                            const rawStack = stripAnsi(testResult.error.stack || '');
-
-                            // Parse error message to show meaningful context
-                            const lines = rawMessage.split('\n');
-                            const errorLines = [];
-
-                            for (let i = 0; i < lines.length; i++) {
-                                const trimmed = lines[i].trim();
-
-                                // Skip empty lines, code snippets (line numbers), and stack traces
-                                if (!trimmed ||
-                                    trimmed.match(/^\d+\s+\|/) ||
-                                    trimmed.match(/^>\s*\d+\s+\|/) ||
-                                    trimmed.startsWith('at ') ||
-                                    trimmed.match(/^[\^]+$/)) {
-                                    continue;
-                                }
-
-                                // Always capture Error: line and the line after it (custom message)
-                                if (trimmed.startsWith('Error:')) {
-                                    errorLines.push(trimmed);
-                                    // Check if next line is a custom message (not Expected/Received)
-                                    if (i + 1 < lines.length) {
-                                        const nextLine = lines[i + 1].trim();
-                                        if (nextLine && !nextLine.startsWith('Expected:') && !nextLine.startsWith('Received:')) {
-                                            errorLines.push(nextLine);
-                                            i++; // Skip the next iteration since we already processed it
-                                        }
-                                    }
-                                }
-                                // Capture Expected/Received values
-                                else if (trimmed.startsWith('Expected:') || trimmed.startsWith('Received:')) {
-                                    errorLines.push(trimmed);
-                                }
-                                // Capture expect() assertion line
-                                else if (trimmed.includes('expect(') && trimmed.includes(')')) {
-                                    errorLines.push(trimmed);
-                                }
-                            }
-
-                            error = errorLines.length > 0 ? errorLines.join('\n') : rawMessage;
-                            fullError = rawMessage + '\n' + rawStack;
-                        }
-                    }
-
-                    results.push({
-                        test: {
-                            id: `test-${i}`,
-                            featureId: `feature-${node.id}`,
-                            title: testTitle,
-                            description: testTitle,
-                            input: {},
-                            expectedResult: {}
-                        },
-                        passed,
-                        error,
-                        fullError,
-                        actualResult: undefined
-                    });
-
-                    // Log individual test result
-                    const icon = passed ? '✅' : '❌';
-                    const status = playwrightTest?.results?.[0]?.status || 'unknown';
-                    this.outputChannel.appendLine(`   ${icon} Test ${i + 1}: ${testTitle} (${status})`);
-                    if (error) {
-                        const errorLines = error.split('\n');
-                        errorLines.forEach((line, idx) => {
-                            if (idx === 0) {
-                                this.outputChannel.appendLine(`      └─ ${line}`);
-                            } else {
-                                this.outputChannel.appendLine(`         ${line}`);
-                            }
-                        });
-                    }
-                }
-                this.outputChannel.appendLine('');
-            } else {
-                // Match Playwright tests with node's test definitions
-                let testIndex = 0;
-                for (const feature of features) {
-                    this.outputChannel.appendLine(`📋 Feature: ${feature.description}`);
-
-                    for (const test of feature.tests || []) {
-                        const playwrightTest = tests[testIndex];
-                        const passed = playwrightTest?.results?.[0]?.status === 'passed';
-
-                        this.outputChannel.appendLine(`   Test ${testIndex}: ${test.title} -> Playwright status: ${playwrightTest?.results?.[0]?.status || 'undefined'}`);
-
-                        // Extract error information
-                        let error: string | undefined;
-                        let fullError: string | undefined;
-                        let actualResult: any = undefined;
-                        const expectedResult: any = test.expectedResult;
-
-                        if (playwrightTest && !passed) {
-                            const testResult = playwrightTest.results?.[0];
-                            if (testResult?.error) {
-                                // Extract the full error message with expected/actual values
-                                const rawMessage = stripAnsi(testResult.error.message || 'Test failed');
-                                const rawStack = stripAnsi(testResult.error.stack || '');
-
-                                // Parse error message to show meaningful context
-                                const lines = rawMessage.split('\n');
-                                const errorLines = [];
-
-                                for (let i = 0; i < lines.length; i++) {
-                                    const trimmed = lines[i].trim();
-
-                                    // Skip empty lines, code snippets (line numbers), and stack traces
-                                    if (!trimmed ||
-                                        trimmed.match(/^\d+\s+\|/) ||
-                                        trimmed.match(/^>\s*\d+\s+\|/) ||
-                                        trimmed.startsWith('at ') ||
-                                        trimmed.match(/^[\^]+$/)) {
-                                        continue;
-                                    }
-
-                                    // Always capture Error: line and the line after it (custom message)
-                                    if (trimmed.startsWith('Error:')) {
-                                        errorLines.push(trimmed);
-                                        // Check if next line is a custom message (not Expected/Received)
-                                        if (i + 1 < lines.length) {
-                                            const nextLine = lines[i + 1].trim();
-                                            if (nextLine && !nextLine.startsWith('Expected:') && !nextLine.startsWith('Received:')) {
-                                                errorLines.push(nextLine);
-                                                i++; // Skip the next iteration since we already processed it
-                                            }
-                                        }
-                                    }
-                                    // Capture Expected/Received values
-                                    else if (trimmed.startsWith('Expected:') || trimmed.startsWith('Received:')) {
-                                        errorLines.push(trimmed);
-                                    }
-                                    // Capture expect() assertion line
-                                    else if (trimmed.includes('expect(') && trimmed.includes(')')) {
-                                        errorLines.push(trimmed);
-                                    }
-                                }
-
-                                error = errorLines.length > 0 ? errorLines.join('\n') : rawMessage;
-                                fullError = rawMessage + '\n' + rawStack;
-                            }
-                        }
-
-                        // For passed tests, actualResult is same as expected
-                        if (passed) {
-                            actualResult = test.expectedResult;
-                        }
-
-                        results.push({
-                            test: { ...test, expectedResult },
-                            passed,
-                            error,
-                            fullError,
-                            actualResult
-                        });
-
-                        // Log individual test result
-                        const icon = passed ? '✅' : '❌';
-                        this.outputChannel.appendLine(`   ${icon} ${test.title}`);
-                        if (error) {
-                            const errorLines = error.split('\n');
-                            errorLines.forEach((line, idx) => {
-                                if (idx === 0) {
-                                    this.outputChannel.appendLine(`      └─ ${line}`);
-                                } else {
-                                    this.outputChannel.appendLine(`         ${line}`);
-                                }
-                            });
-                        }
-
-                        testIndex++;
-                    }
-                    this.outputChannel.appendLine('');
-                }
-            }
+            const results = this.buildTestResults(specs, tests, features, node);
 
             if (this.isCancellationRequested(runToken)) {
-                return this.createCanceledExecutionResult(Date.now() - startTime);
+                return createCanceledExecutionResult(Date.now() - startTime);
             }
 
-            // Parse coverage report (Dynamic Context - Layer 1)
-            // Sprint 5: Enhanced coverage with source files + API requests
-            // Note: For browser tests, coverage must be collected via Playwright's Coverage API
-            // Add page.coverage.startJSCoverage() / stopJSCoverage() in test files
-            // c8/nyc only work for Node.js code, not browser application code
+            // Coverage (single-node only - batch skips this to avoid memory issues)
             this.parseCoverageAndAttachToResults(results, workspacePath, true);
 
             if (!CoverageParser.hasCoverage(path.join(workspacePath, '.tdad', 'coverage'))) {
@@ -716,7 +358,7 @@ export class TestRunner implements ITestRunner {
                 this.outputChannel.appendLine(`   If you wrote tests manually, add coverage hooks to your test file.`);
             }
 
-            // Check if all tests failed with page.goto or page.fill timeouts (indicates server not running)
+            // Server-not-running diagnostic
             const allFailedWithPageTimeout = results.length > 0 && results.every(r => {
                 return !r.passed && r.fullError && (
                     r.fullError.includes('page.goto') ||
@@ -733,11 +375,9 @@ export class TestRunner implements ITestRunner {
                 this.outputChannel.appendLine(`   3. Start your servers or update URLs via TDAD Settings\n`);
             }
 
-            const duration = Date.now() - startTime;
-
             return {
                 results,
-                duration,
+                duration: Date.now() - startTime,
                 stdout: execResult.stdout,
                 stderr: execResult.stderr,
                 exitCode: execResult.exitCode,
@@ -746,11 +386,10 @@ export class TestRunner implements ITestRunner {
         } catch (error) {
             const duration = Date.now() - startTime;
             if (this.isCancellationRequested(runToken)) {
-                return this.createCanceledExecutionResult(duration);
+                return createCanceledExecutionResult(duration);
             }
             this.outputChannel.appendLine(`\n❌ Playwright execution failed: ${error}`);
 
-            // Fallback: return failed results for all tests
             const results: TestResult[] = [];
             for (const feature of getNodeFeatures(node)) {
                 for (const test of (feature as any).tests || []) {
@@ -774,232 +413,77 @@ export class TestRunner implements ITestRunner {
     }
 
     /**
-     * Parse Playwright JSON reporter output from mixed stdout (may contain globalSetup logs)
+     * Match Playwright test results with node feature definitions and build TestResult[]
      */
-    private static extractPlaywrightJson(output: string): any {
-        const trimmed = output.trim();
-        if (!trimmed) { throw new Error('Empty Playwright output'); }
+    private buildTestResults(specs: any[], tests: any[], features: any[], node: Node): TestResult[] {
+        const results: TestResult[] = [];
 
-        try { return JSON.parse(trimmed); } catch { /* mixed output recovery */ }
+        if (features.length === 0 || features.every(f => !f.tests || f.tests.length === 0)) {
+            // No features/tests defined in node - create results directly from Playwright tests
+            this.outputChannel.appendLine(`⚠️  No test definitions in node - using Playwright test names`);
 
-        const jsonEnd = output.lastIndexOf('}');
-        if (jsonEnd === -1) { throw new Error('Could not find JSON end token in output'); }
+            for (let i = 0; i < tests.length; i++) {
+                const playwrightTest = tests[i];
+                const spec = specs.find(s => s.tests?.includes(playwrightTest));
+                const passed = playwrightTest?.results?.[0]?.status === 'passed';
+                const testTitle = spec?.title || `Test ${i + 1}`;
+                const { error, fullError } = parsePlaywrightError(playwrightTest);
 
-        const startCandidates: number[] = [];
-        for (let i = 0; i < jsonEnd; i++) {
-            if (output[i] === '{') { startCandidates.push(i); }
+                results.push({
+                    test: {
+                        id: `test-${i}`,
+                        featureId: `feature-${node.id}`,
+                        title: testTitle,
+                        description: testTitle,
+                        input: {},
+                        expectedResult: {}
+                    },
+                    passed,
+                    error,
+                    fullError,
+                    actualResult: undefined
+                });
+
+                const status = playwrightTest?.results?.[0]?.status || 'unknown';
+                logTestResult(this.outputChannel, `Test ${i + 1}: ${testTitle} (${status})`, passed, error);
+            }
+            this.outputChannel.appendLine('');
+        } else {
+            // Match Playwright tests with node's test definitions
+            let testIndex = 0;
+            for (const feature of features) {
+                this.outputChannel.appendLine(`📋 Feature: ${feature.description}`);
+
+                for (const test of feature.tests || []) {
+                    const playwrightTest = tests[testIndex];
+                    const passed = playwrightTest?.results?.[0]?.status === 'passed';
+
+                    this.outputChannel.appendLine(`   Test ${testIndex}: ${test.title} -> Playwright status: ${playwrightTest?.results?.[0]?.status || 'undefined'}`);
+
+                    const { error, fullError } = parsePlaywrightError(playwrightTest);
+                    const expectedResult: any = test.expectedResult;
+                    const actualResult = passed ? test.expectedResult : undefined;
+
+                    results.push({
+                        test: { ...test, expectedResult },
+                        passed,
+                        error,
+                        fullError,
+                        actualResult
+                    });
+
+                    logTestResult(this.outputChannel, test.title, passed, error);
+                    testIndex++;
+                }
+                this.outputChannel.appendLine('');
+            }
         }
 
-        for (let i = startCandidates.length - 1; i >= 0; i--) {
-            const candidate = output.substring(startCandidates[i], jsonEnd + 1).trim();
-            if (!candidate.startsWith('{')) { continue; }
-            try {
-                const parsed = JSON.parse(candidate);
-                if (parsed && typeof parsed === 'object' && Array.isArray(parsed.suites) && parsed.stats) {
-                    return parsed;
-                }
-            } catch { /* try next */ }
-        }
-
-        throw new Error('Could not extract valid Playwright JSON payload from mixed output');
-    }
-
-    /**
-     * Recursively extract all specs from nested Playwright suites
-     */
-    private static extractSpecsFromSuites(suites: any[]): any[] {
-        const specs: any[] = [];
-        const walk = (suite: any): void => {
-            if (suite.specs?.length > 0) { specs.push(...suite.specs); }
-            if (suite.suites?.length > 0) {
-                for (const nested of suite.suites) { walk(nested); }
-            }
-        };
-        for (const suite of suites) { walk(suite); }
-        return specs;
-    }
-
-    /**
-     * Clean up Playwright test output for better readability
-     * - Remove redundant folder name from file name (e.g., expose-scenario-crud-endpoints/expose-scenario-crud-endpoints.test.js -> expose-scenario-crud-endpoints.test.js)
-     * - Remove column number from line reference (e.g., :933:3 -> :933)
-     * - Remove Playwright project label in list lines (e.g., [ui], [api])
-     */
-    private cleanTestOutput(output: string): string {
-        return output
-            .replace(
-                /([\\\/])([^\\\/]+)[\\\/]\2\.test\.js:(\d+):\d+/g,
-                '$1$2.test.js:$3'
-            )
-            // List reporter format: "x   1 [ui]  file:line ..."
-            // Remove only the project token after test index, keep title tags like [API-123].
-            .replace(/^(\s*\S+\s+\d+\s+)\[[^\]]+\]\s+/gm, '$1');
-    }
-
-    /**
-     * Execute command with timeout support using spawn for better process control
-     */
-    private executeCommandWithTimeout(command: string, workingDir: string, timeout?: number, env?: Record<string, string>): Promise<{
-        stdout: string;
-        stderr: string;
-        exitCode: number | null;
-        timedOut: boolean;
-    }> {
-        return new Promise((resolve, reject) => {
-            let stdout = '';
-            let stderr = '';
-            let timedOut = false;
-            let processExited = false;
-            let resolved = false;
-
-            // Parse command for cross-platform execution
-            const isWindows = process.platform === 'win32';
-            const shell = isWindows ? 'cmd.exe' : '/bin/sh';
-            const shellFlag = isWindows ? '/c' : '-c';
-
-            this.outputChannel.appendLine(`\n🚀 Starting process...`);
-            this.outputChannel.appendLine(`   Shell: ${shell} ${shellFlag}`);
-            this.outputChannel.appendLine(`   CWD: ${workingDir}`);
-            if (env) {
-                this.outputChannel.appendLine(`   ENV: ${Object.keys(env).join(', ')}`);
-            }
-
-            // Spawn process with shell
-            const childProcess = spawn(shell, [shellFlag, command], {
-                cwd: workingDir,
-                windowsHide: true,
-                env: env ? { ...process.env, ...env } : process.env
-            });
-            this.currentProcess = childProcess;
-            this.trackActiveProcess(childProcess, workingDir);
-
-            this.outputChannel.appendLine(`✅ Process spawned (PID: ${childProcess.pid})\n`);
-
-            // Timeout disabled by default. Keep optional support only when a positive timeout is explicitly passed.
-            const timeoutHandle = timeout && timeout > 0 ? setTimeout(() => {
-                if (!processExited && !resolved) {
-                    timedOut = true;
-                    processExited = true;
-                    clearInterval(progressInterval);
-                    const pid = childProcess.pid;
-                    if (pid) {
-                        this.untrackActiveProcess(pid);
-                    }
-                    if (this.currentProcess?.pid === pid) {
-                        this.currentProcess = null;
-                    }
-                    resolved = true;
-                    resolve({ stdout, stderr, exitCode: null, timedOut });
-                }
-            }, timeout) : null;
-
-            // Collect stdout and stream to output in real-time
-            childProcess.stdout?.on('data', (data) => {
-                const text = data.toString();
-                stdout += text;
-                // Stream to output channel in real-time for debugging
-                this.outputChannel.append(text);
-            });
-
-            // Collect stderr and stream to output in real-time
-            // Note: Playwright 'list' reporter outputs to stderr, so we show it without prefix
-            childProcess.stderr?.on('data', (data) => {
-                const text = data.toString();
-                stderr += text;
-                // Clean up test paths before displaying (remove .tdad/workflows prefix and redundant folder names)
-                const cleaned = this.cleanTestOutput(text);
-                this.outputChannel.append(cleaned);
-            });
-
-            // Track start time for progress logging
-            const startTime = Date.now();
-
-            // Log progress every 5 seconds
-            const progressInterval = setInterval(() => {
-                if (!processExited) {
-                    const elapsed = Date.now() - startTime;
-                    this.outputChannel.appendLine(`\n⏱️  Still running... (${Math.floor(elapsed / 1000)}s elapsed)`);
-                }
-            }, 5000);
-
-            // Handle process exit
-            childProcess.on('close', (code) => {
-                if (resolved) {
-                    return;
-                }
-                processExited = true;
-                if (timeoutHandle) {
-                    clearTimeout(timeoutHandle);
-                }
-                clearInterval(progressInterval);
-                const pid = childProcess.pid;
-                if (pid) {
-                    this.untrackActiveProcess(pid);
-                }
-                if (this.currentProcess?.pid === pid) {
-                    this.currentProcess = null;
-                }
-
-                const elapsed = Date.now() - startTime;
-                this.outputChannel.appendLine(`\n✅ Process exited with code ${code} after ${Math.floor(elapsed / 1000)}s`);
-
-                // For Playwright commands, ALWAYS resolve even with non-zero exit codes
-                // Playwright exits with code 1 when tests fail, but still provides valid JSON output
-                if (command.includes('playwright')) {
-                    resolved = true;
-                    resolve({ stdout, stderr, exitCode: code, timedOut });
-                } else if (timedOut) {
-                    resolved = true;
-                    resolve({ stdout, stderr, exitCode: code, timedOut });
-                } else if (code !== 0) {
-                    reject(new Error(`Process exited with code ${code}\n${stderr}`));
-                } else {
-                    resolved = true;
-                    resolve({ stdout, stderr, exitCode: code, timedOut });
-                }
-            });
-
-            // Handle process errors
-            childProcess.on('error', (error) => {
-                if (resolved) {
-                    return;
-                }
-                processExited = true;
-                if (timeoutHandle) {
-                    clearTimeout(timeoutHandle);
-                }
-                clearInterval(progressInterval);
-                const pid = childProcess.pid;
-                if (pid) {
-                    this.untrackActiveProcess(pid);
-                }
-                if (this.currentProcess?.pid === pid) {
-                    this.currentProcess = null;
-                }
-                this.outputChannel.appendLine(`\n❌ Process error: ${error.message}`);
-                reject(error);
-            });
-        });
-    }
-
-    private isCancellationRequested(runToken: number): boolean {
-        return runToken !== TestRunner.cancellationVersion;
-    }
-
-    private createCanceledExecutionResult(duration: number): TestExecutionResult {
-        return {
-            results: [],
-            duration,
-            stdout: '',
-            stderr: '',
-            exitCode: null,
-            timedOut: false
-        };
+        return results;
     }
 
     /**
      * Parse coverage and attach to test results
-     * Sprint 5: Extracted to prevent duplicate code (CLAUDE.md ALWAYS Rule 1)
      */
     private parseCoverageAndAttachToResults(
         results: TestResult[],
@@ -1011,13 +495,11 @@ export class TestRunner implements ITestRunner {
         if (CoverageParser.hasCoverage(coveragePath)) {
             const coverageData = CoverageParser.parseCoverageSummaryEnhanced(coveragePath);
 
-            // Count total API requests from all test traces
             const allApiRequests = Object.values(coverageData.testTraces)
                 .flatMap(trace => trace.apiRequests || []);
 
             this.outputChannel.appendLine(`\n📊 Coverage: ${coverageData.sourceFiles.length} source files, ${allApiRequests.length} API requests`);
 
-            // Show API requests summary (only for Playwright tests)
             if (showApiSummary && allApiRequests.length > 0) {
                 const failedRequests = allApiRequests.filter(r => r.status >= 400);
                 if (failedRequests.length > 0) {
@@ -1027,7 +509,6 @@ export class TestRunner implements ITestRunner {
                 }
             }
 
-            // Add enhanced coverage to each test result
             results.forEach(result => {
                 result.coverageData = coverageData;
             });
@@ -1036,8 +517,9 @@ export class TestRunner implements ITestRunner {
 
     /**
      * Run ALL test files in a single Playwright command.
-     * Used by batch test mode to discover all tests via testDir config.
      * Returns a Map of nodeId -> TestResult[] by matching suite.file to node test paths.
+     * Note: Coverage data is NOT attached to batch results to avoid memory issues.
+     * GoldenPacketAssembler re-reads coverage per-node when building fix prompts.
      */
     public async runBatchTests(
         nodes: Node[],
@@ -1052,8 +534,7 @@ export class TestRunner implements ITestRunner {
         this.outputChannel.appendLine(`Running BATCH tests for ${nodes.length} nodes`);
         this.outputChannel.appendLine(`${'='.repeat(60)}\n`);
 
-        // Pre-flight: ensure config, fixtures, coverage cleanup
-        this.ensurePlaywrightPrerequisites(workspacePath);
+        ensurePlaywrightPrerequisites(workspacePath, this.outputChannel);
 
         if (this.isCancellationRequested(runToken)) {
             return resultMap;
@@ -1069,20 +550,13 @@ export class TestRunner implements ITestRunner {
             }
         }
 
-        // Run single Playwright command filtered to the folder(s) containing these nodes
-        // Don't quote paths - causes issues with cmd.exe on Windows (same as per-node runner)
-        const tdadConfigPath = '.tdad/playwright.config.js';
-        const folderFilters = [...new Set(nodes.map(n => `.tdad/workflows/${getWorkflowFolderName(n.workflowId)}`))];
-        const command = folderFilters.length > 0
-            ? `npx playwright test ${folderFilters.join(' ')} --config=${tdadConfigPath} --reporter=list,json`
-            : `npx playwright test --config=${tdadConfigPath} --reporter=list,json`;
-
+        const command = buildBatchPlaywrightCommand(nodes);
         this.outputChannel.appendLine(`🔍 Batch command: ${command}`);
         this.outputChannel.appendLine(`🔍 Working directory: ${workspacePath}\n`);
 
-        const execResult = await this.executeCommandWithTimeout(command, workspacePath);
+        const execResult = await this.processManager.executeCommandWithTimeout(command, workspacePath);
 
-        if (this.isCancellationRequested(runToken) || this.cancelRequested) {
+        if (this.isCancellationRequested(runToken) || this.processManager.cancelRequested) {
             return resultMap;
         }
 
@@ -1091,10 +565,9 @@ export class TestRunner implements ITestRunner {
         // Parse JSON output
         let jsonResult: any;
         try {
-            jsonResult = TestRunner.extractPlaywrightJson(execResult.stdout);
+            jsonResult = extractPlaywrightJson(execResult.stdout);
         } catch (parseError) {
             this.outputChannel.appendLine(`\n❌ Failed to parse batch Playwright JSON output: ${parseError}`);
-            // Return synthetic error for all nodes
             for (const node of nodes) {
                 resultMap.set(node.id, [{
                     test: {
@@ -1116,7 +589,6 @@ export class TestRunner implements ITestRunner {
         const topLevelSuites = jsonResult.suites || [];
         for (const fileSuite of topLevelSuites) {
             const suiteFile = (fileSuite.file || '').replace(/\\/g, '/');
-            // Find the node whose test file matches this suite
             let matchedNode: Node | undefined;
             for (const [relPath, node] of nodeByTestPath) {
                 if (suiteFile.endsWith(relPath) || relPath.endsWith(suiteFile) || suiteFile === relPath) {
@@ -1129,8 +601,7 @@ export class TestRunner implements ITestRunner {
                 continue;
             }
 
-            const specs = TestRunner.extractSpecsFromSuites([fileSuite]);
-
+            const specs = extractSpecsFromSuites([fileSuite]);
             const tests = specs.flatMap((spec: any) => spec.tests || []);
             const nodeResults: TestResult[] = [];
 
@@ -1139,19 +610,7 @@ export class TestRunner implements ITestRunner {
                 const spec = specs.find(s => s.tests?.includes(playwrightTest));
                 const passed = playwrightTest?.results?.[0]?.status === 'passed';
                 const testTitle = spec?.title || `Test ${i + 1}`;
-
-                let error: string | undefined;
-                let fullError: string | undefined;
-
-                if (playwrightTest && !passed) {
-                    const testResult = playwrightTest.results?.[0];
-                    if (testResult?.error) {
-                        const rawMessage = stripAnsi(testResult.error.message || 'Test failed');
-                        const rawStack = stripAnsi(testResult.error.stack || '');
-                        error = rawMessage;
-                        fullError = rawMessage + '\n' + rawStack;
-                    }
-                }
+                const { error, fullError } = parsePlaywrightError(playwrightTest);
 
                 nodeResults.push({
                     test: {
@@ -1173,12 +632,10 @@ export class TestRunner implements ITestRunner {
             this.outputChannel.appendLine(`📊 ${matchedNode.title}: ${passedCount}/${nodeResults.length} passed`);
         }
 
-        // Parse coverage/trace data once and attach to all node results
-        // Coverage is global (.tdad/coverage/), so parse once and share across all nodes
-        const allResults = [...resultMap.values()].flat();
-        if (allResults.length > 0) {
-            this.parseCoverageAndAttachToResults(allResults, workspacePath, true);
-        }
+        // Coverage data is NOT attached in batch mode to prevent memory issues.
+        // With 57+ nodes, attaching the full coverage object (1000+ traces, 5000+ API requests)
+        // to every test result causes memory blowup during serialization.
+        // GoldenPacketAssembler re-reads coverage per-node when building fix prompts.
 
         // For nodes not found in results, add empty results
         for (const node of nodes) {
@@ -1190,147 +647,22 @@ export class TestRunner implements ITestRunner {
         return resultMap;
     }
 
-    /**
-     * Shared pre-flight setup: fixtures, config bundle, coverage cleanup
-     */
-    private ensurePlaywrightPrerequisites(workspacePath: string): void {
-        const scaffoldingService = new ScaffoldingService();
-        scaffoldingService.ensureFixturesFile(workspacePath);
-        scaffoldingService.ensurePlaywrightGlobalLockFile(workspacePath);
-
-        const tdadConfigFile = path.join(workspacePath, '.tdad', 'playwright.config.js');
-        const tdadGeneratedConfigFile = path.join(workspacePath, '.tdad', 'playwright.generated.js');
-        const tdadUserConfigFile = path.join(workspacePath, '.tdad', 'playwright.user.js');
-        const config = vscode.workspace.getConfiguration('tdad');
-        const urls = config.get<Record<string, string>>('test.urls', { ui: 'http://localhost:5173' });
-        const workers = config.get<number>('test.workers', 1);
-
-        let shouldRegenerateConfig = false;
-        if (!fs.existsSync(tdadConfigFile) || !fs.existsSync(tdadGeneratedConfigFile) || !fs.existsSync(tdadUserConfigFile)) {
-            shouldRegenerateConfig = true;
-        } else {
-            try {
-                const currentConfig = fs.readFileSync(tdadConfigFile, 'utf-8');
-                if (!currentConfig.includes('TDAD_WRAPPER_CONFIG_V2')) {
-                    shouldRegenerateConfig = true;
-                }
-            } catch {
-                shouldRegenerateConfig = true;
-            }
-        }
-
-        if (shouldRegenerateConfig) {
-            scaffoldingService.scaffoldPlaywrightConfig(workspacePath, urls, workers);
-            this.outputChannel.appendLine(`TDAD Playwright config bundle created/updated`);
-        }
-
-        // Clear previous coverage data
-        const coverageDir = path.join(workspacePath, '.tdad', 'coverage');
-        if (fs.existsSync(coverageDir)) {
-            const files = fs.readdirSync(coverageDir);
-            for (const file of files) {
-                if (file === 'coverage.json' || file.startsWith('coverage-worker-')) {
-                    fs.unlinkSync(path.join(coverageDir, file));
-                }
-            }
-        }
+    private isCancellationRequested(runToken: number): boolean {
+        return runToken !== TestRunner.cancellationVersion;
     }
 
-    /**
-     * Cancel currently running test process
-     */
     public cancelCurrentTest(): void {
         TestRunner.cancellationVersion += 1;
-        this.cancelRequested = true;
-
-        if (this.activeProcesses.size > 0) {
-            this.outputChannel.appendLine('\n🛑 Canceling test execution...');
-            for (const pid of this.activeProcesses.keys()) {
-                this.terminateProcessTree(pid);
-            }
-            this.releaseStaleTestLocks();
-            this.activeProcesses.clear();
-            this.currentProcess = null;
-        } else {
-            this.outputChannel.appendLine('\nCancel requested for queued/waiting test executions.');
-            this.releaseStaleTestLocks();
-        }
+        this.processManager.cancelAll();
     }
 
-    /**
-     * Get test execution status
-     */
     public isTestRunning(): boolean {
-        return this.activeProcesses.size > 0;
+        return this.processManager.isRunning();
     }
 
     public dispose() {
-        // Cancel any running process before disposing
-        if (this.activeProcesses.size > 0) {
-            for (const pid of this.activeProcesses.keys()) {
-                this.terminateProcessTree(pid);
-            }
-            this.releaseStaleTestLocks();
-            this.activeProcesses.clear();
-            this.currentProcess = null;
-        }
+        this.processManager.dispose();
         this.outputChannel.dispose();
         this.terminal?.dispose();
     }
-
-    private trackActiveProcess(childProcess: ChildProcess, workingDir: string): void {
-        const pid = childProcess.pid;
-        this.observedWorkingDirs.add(workingDir);
-        if (!pid) {
-            return;
-        }
-        this.activeProcesses.set(pid, { process: childProcess, workingDir });
-    }
-
-    private untrackActiveProcess(pid: number): void {
-        this.activeProcesses.delete(pid);
-    }
-
-    private releaseStaleTestLocks(): void {
-        try {
-            const candidateDirs = new Set<string>(this.observedWorkingDirs);
-            for (const workspaceFolder of vscode.workspace.workspaceFolders ?? []) {
-                candidateDirs.add(workspaceFolder.uri.fsPath);
-            }
-
-            for (const dir of candidateDirs) {
-                const lockFile = path.join(dir, '.tdad', '.test-lock');
-                if (fs.existsSync(lockFile)) {
-                    fs.unlinkSync(lockFile);
-                }
-            }
-        } catch {
-            // Best-effort cleanup only.
-        }
-    }
-
-    private terminateProcessTree(pid: number): void {
-        try {
-            if (process.platform === 'win32') {
-                // Ensure child processes (e.g., npx/playwright) are terminated as well.
-                spawn('taskkill', ['/PID', `${pid}`, '/T', '/F'], { windowsHide: true });
-            } else {
-                try {
-                    process.kill(pid, 'SIGTERM');
-                } catch {
-                    return;
-                }
-                setTimeout(() => {
-                    try {
-                        process.kill(pid, 'SIGKILL');
-                    } catch {
-                        // Ignore if already gone.
-                    }
-                }, 2000);
-            }
-        } catch {
-            // Best-effort termination.
-        }
-    }
 }
-
