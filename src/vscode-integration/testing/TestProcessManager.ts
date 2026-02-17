@@ -68,20 +68,16 @@ export class TestProcessManager {
                 }
             }, timeout) : null;
 
-            // Collect stdout and stream to output in real-time
             childProcess.stdout?.on('data', (data) => {
                 const text = data.toString();
                 stdout += text;
-                this.outputChannel.append(text);
+                this.outputChannel.append(cleanTestOutput(text));
             });
 
-            // Collect stderr and stream to output in real-time
-            // Note: Playwright 'list' reporter outputs to stderr, so we show it without prefix
             childProcess.stderr?.on('data', (data) => {
                 const text = data.toString();
                 stderr += text;
-                const cleaned = cleanTestOutput(text);
-                this.outputChannel.append(cleaned);
+                this.outputChannel.append(cleanTestOutput(text));
             });
 
             const startTime = Date.now();
@@ -224,17 +220,11 @@ export class TestProcessManager {
 
 /**
  * Clean up Playwright test output for better readability
- * - Remove redundant folder name from file name
- * - Remove column number from line reference
- * - Remove Playwright project label in list lines
  */
 export function cleanTestOutput(output: string): string {
     return output
-        .replace(
-            /([\\\/])([^\\\/]+)[\\\/]\2\.test\.js:(\d+):\d+/g,
-            '$1$2.test.js:$3'
-        )
-        // List reporter format: "x   1 [ui]  file:line ..."
-        // Remove only the project token after test index, keep title tags like [API-123].
-        .replace(/^(\s*\S+\s+\d+\s+)\[[^\]]+\]\s+/gm, '$1');
+        .replace(/([\\\/])([^\\\/]+)[\\\/]\2\.test\.js:(\d+):\d+/g, '$1$2.test.js:$3')
+        .replace(/^(\s*\S+\s+\d+\s+)\[[^\]]+\]\s+/gm, '$1')
+        .replace(/^(\s*)ok(\s+\d+)/gm, '$1✅$2')
+        .replace(/^(\s*)x(\s+\d+)/gm, '$1❌$2');
 }
