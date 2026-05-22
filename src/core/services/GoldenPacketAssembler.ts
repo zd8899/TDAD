@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { Node, Edge, TestResult } from '../../shared/types';
+import { Node, Edge, TestResult, TestTrace } from '../../shared/types';
 import { toPascalCase, getWorkflowFolderName } from '../../shared/utils/stringUtils';
 import { getFeatureFilePath, getActionFilePath, getTestFilePath } from '../../shared/utils/nodePathUtils';
 import { logError, logger } from '../../shared/utils/Logger';
@@ -554,7 +554,7 @@ export class GoldenPacketAssembler {
      * @returns The relative path to the saved trace file
      */
     private static saveTraceDataToFile(
-        trace: any,
+        trace: TestTrace,
         testTitle: string,
         workspacePath: string,
         nodeName: string,
@@ -627,7 +627,7 @@ export class GoldenPacketAssembler {
      * @param fullError - Full error with stack trace (optional, for call stack parsing)
      */
     private static formatTestTrace(
-        trace: any,
+        trace: TestTrace,
         testPassed = false,
         workspacePath?: string,
         testTitle?: string,

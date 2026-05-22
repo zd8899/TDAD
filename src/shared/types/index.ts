@@ -161,6 +161,8 @@ export interface TestTrace {
     pageErrors: PageError[];
     actionResult?: any;  // Return value from action function (e.g., { success: false, errorMessage: "..." })
     screenshotPath?: string;  // Relative path to screenshot file
+    duration?: number;        // Test duration in milliseconds (set by tdadTrace fixture via testInfo.duration)
+    domSnapshot?: any;        // DOM snapshot captured at test completion (UI tests only)
 }
 
 export interface CoverageData {
